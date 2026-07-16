@@ -72,7 +72,7 @@ def _precheck(inventory: Inventory) -> list[NfsEndpoint]:
         server_address, client_address = connection[0], connection[2]
         server_addresses.add(server_address)
         endpoints.append(NfsEndpoint(node_id, ssh, client_address, server_address))
-        mount = run_ssh(ssh, ["findmnt", "-n", "-o", "SOURCE,FSTYPE", "--target", str(inventory.client_mount)], check=False)
+        mount = run_ssh(ssh, ["findmnt", "-n", "-o", "SOURCE,FSTYPE", "--mountpoint", str(inventory.client_mount)], check=False)
         if mount.returncode == 0 and not mount.stdout.strip().startswith(f"{server_address}:/ nfs"):
             raise ProcessFailure(f"Conflicting mount at {inventory.client_mount} on {node_id}: {mount.stdout.strip()}")
     if len(server_addresses) != 1:
@@ -128,7 +128,7 @@ def _install_export(text: str) -> None:
 
 
 def _mount_info(endpoint: NfsEndpoint, mount: Path) -> dict[str, str] | None:
-    result = run_ssh(endpoint.ssh, ["findmnt", "-J", "-o", "SOURCE,FSTYPE,OPTIONS", "--target", str(mount)], check=False)
+    result = run_ssh(endpoint.ssh, ["findmnt", "-J", "-o", "SOURCE,FSTYPE,OPTIONS", "--mountpoint", str(mount)], check=False)
     if result.returncode:
         return None
     filesystems = json.loads(result.stdout).get("filesystems", [])
