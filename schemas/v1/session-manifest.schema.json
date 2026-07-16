@@ -46,7 +46,7 @@
         "type": "object", "additionalProperties": false, "required": ["clock_domain_id", "owner_node_id", "kind", "epoch", "comparability_group"],
         "properties": {
           "clock_domain_id": {"type": "string"}, "owner_node_id": {"type": "string"}, "kind": {"const": "acquisition"},
-          "epoch": {"enum": ["local_device_epoch", "shared_device_epoch"]}, "comparability_group": {"type": "string"}
+          "epoch": {"enum": ["local_device_epoch", "shared_device_epoch", "synthetic_epoch"]}, "comparability_group": {"type": "string"}
         }
       }
     },

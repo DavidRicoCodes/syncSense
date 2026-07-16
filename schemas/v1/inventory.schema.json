@@ -32,7 +32,7 @@
           "ssh": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["host", "user"],
+            "required": ["host"],
             "properties": {
               "host": {"type": "string", "minLength": 1},
               "user": {"type": "string", "minLength": 1},
@@ -67,4 +67,3 @@
     }
   }
 }
-

@@ -16,7 +16,12 @@
           "required": ["backend", "producer_id", "pid", "proc_start_ticks"],
           "properties": {
             "backend": {"type": "string", "minLength": 1}, "producer_id": {"type": "string", "minLength": 1},
-            "pid": {"type": "integer", "minimum": 1}, "proc_start_ticks": {"type": "integer", "minimum": 0}
+            "pid": {"type": "integer", "minimum": 1}, "proc_start_ticks": {"type": "integer", "minimum": 0},
+            "ssh_host": {"type": "string", "minLength": 1},
+            "remote_pid": {"type": "integer", "minimum": 1},
+            "remote_start_ticks": {"type": "integer", "minimum": 0},
+            "worker_path": {"type": "string", "minLength": 1},
+            "remote_runtime_dir": {"type": "string", "minLength": 1}
           }
         }
       ]

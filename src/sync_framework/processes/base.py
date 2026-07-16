@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,11 @@ class ProcessSpec:
     env: dict[str, str]
     log_path: Path
     safety_class: str
+    transport: str = "local"
+    ssh: dict[str, Any] | None = None
+    worker_config: dict[str, Any] | None = None
+    remote_runtime_dir: Path | None = None
+    shared_runtime_dir: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -23,9 +28,14 @@ class ProcessHandle:
     producer_id: str
     pid: int
     proc_start_ticks: int
+    ssh_host: str | None = None
+    remote_pid: int | None = None
+    remote_start_ticks: int | None = None
+    worker_path: str | None = None
+    remote_runtime_dir: str | None = None
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        return {key: value for key, value in asdict(self).items() if value is not None}
 
     @classmethod
     def from_dict(cls, value: dict) -> "ProcessHandle":
@@ -46,4 +56,3 @@ class ProcessAdapter(Protocol):
     def stop(self, handle: ProcessHandle, grace_s: float) -> ProcessStatus: ...
     def kill(self, handle: ProcessHandle) -> ProcessStatus: ...
     def collect(self, handle: ProcessHandle) -> ProcessStatus: ...
-

@@ -19,6 +19,7 @@ SCHEMA_FILES = {
     "event": "event.schema.json",
     "artifact": "artifact.schema.json",
     "producer-manifest": "producer-manifest.schema.json",
+    "producer-result": "producer-result.schema.json",
     "session-manifest": "session-manifest.schema.json",
     "run-state": "run-state.schema.json",
     "batch-model-request": "batch-model-request.schema.json",
@@ -129,15 +130,15 @@ def validate_profile_semantics(raw: dict[str, Any]) -> None:
     for relation in raw["clock_relationships"]:
         if relation["left"] not in clocks or relation["right"] not in clocks:
             raise ValidationFailure("Clock relationship references an unknown domain")
-    if raw["experiment_type"] == "nosync_passive":
+    if raw["experiment_type"] in {"nosync_passive", "distributed_dummy"}:
         receiver_clocks = [p["clock_domain_id"] for p in raw["processes"] if p["role"] == "receiver"]
         if len(receiver_clocks) != 2 or len(set(receiver_clocks)) != 2:
-            raise ValidationFailure("nosync_passive requires two independent receiver clock domains")
+            raise ValidationFailure(f"{raw['experiment_type']} requires two independent receiver clock domains")
         groups = {clocks[c]["comparability_group"] for c in receiver_clocks}
         if len(groups) != 2:
-            raise ValidationFailure("nosync_passive receiver clocks must have different comparability groups")
+            raise ValidationFailure(f"{raw['experiment_type']} receiver clocks must have different comparability groups")
         if not any(r["relation"] == "not_comparable" and {r["left"], r["right"]} == set(receiver_clocks) for r in raw["clock_relationships"]):
-            raise ValidationFailure("nosync_passive must explicitly mark receiver clocks not_comparable")
+            raise ValidationFailure(f"{raw['experiment_type']} must explicitly mark receiver clocks not_comparable")
 
 
 def validate_relative_path(path: str) -> PurePosixPath:

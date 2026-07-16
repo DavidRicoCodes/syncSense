@@ -77,6 +77,8 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
     process_state = state["processes"][producer_id]
     if process_state.get("status") != "stopped" or process_state.get("exit_code") != 0:
         raise PublicationFailure(f"Producer did not stop successfully: {producer_id}")
+    if plan.profile.experiment_type == "distributed_dummy":
+        _validate_dummy_receipt(plan, producer_id)
     records = []
     expected_by_id = {a.artifact_id: a for a in definition.expected_artifacts}
     for expected in definition.expected_artifacts:
@@ -114,6 +116,34 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
     }
     validate_document(manifest, "producer-manifest")
     return manifest
+
+
+def _validate_dummy_receipt(plan: ExecutionPlan, producer_id: str) -> None:
+    resolved = plan.processes[producer_id]
+    path = resolved.producer_dir / "producer-result.json"
+    try:
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PublicationFailure(f"Missing or invalid producer receipt: {producer_id}") from exc
+    try:
+        validate_document(receipt, "producer-result")
+    except ValidationFailure as exc:
+        raise PublicationFailure(f"Invalid producer receipt schema: {producer_id}") from exc
+    if (
+        receipt.get("run_id") != plan.run_id or receipt.get("producer_id") != producer_id
+        or receipt.get("node_id") != resolved.definition.node_id or receipt.get("exit_code") != 0
+        or receipt.get("simulation") is not True or receipt.get("synthetic") is not True
+    ):
+        raise PublicationFailure(f"Producer receipt identity/result mismatch: {producer_id}")
+    declared = {item.get("path"): item for item in receipt.get("artifacts", []) if isinstance(item, dict)}
+    expected = [a for a in resolved.definition.expected_artifacts if a.artifact_type != "producer_result"]
+    if set(declared) != {a.path for a in expected}:
+        raise PublicationFailure(f"Producer receipt does not close expected artifacts: {producer_id}")
+    for artifact in expected:
+        artifact_path = resolved.producer_dir / artifact.path
+        item = declared[artifact.path]
+        if not artifact_path.is_file() or item.get("size_bytes") != artifact_path.stat().st_size or item.get("sha256") != sha256_file(artifact_path):
+            raise PublicationFailure(f"Producer receipt checksum mismatch: {producer_id}/{artifact.path}")
 
 
 def _git_revision(path: Path) -> dict[str, Any]:

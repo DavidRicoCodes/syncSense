@@ -10,7 +10,7 @@ from typing import Any
 from .domain import CapabilityDisabled, ExecutionPlan, ResolvedProcess, ValidationFailure
 
 
-ALLOWED_PLACEHOLDERS = {"run_id", "run_dir", "producer_dir", "label", "scene", "duration_s"}
+ALLOWED_PLACEHOLDERS = {"run_id", "run_dir", "producer_dir", "workspace", "label", "scene", "duration_s"}
 
 
 def _format_value(value: str, context: dict[str, Any]) -> str:
@@ -25,8 +25,8 @@ def _format_value(value: str, context: dict[str, Any]) -> str:
 
 
 def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | None = None, run_dir: Path | None = None, enforce_capabilities: bool = False) -> ExecutionPlan:
-    if enforce_capabilities and inventory.storage_backend != "local":
-        raise CapabilityDisabled("Only local storage is executable in this increment")
+    if enforce_capabilities and inventory.storage_backend not in {"local", "nfs"}:
+        raise CapabilityDisabled(f"Unsupported storage backend: {inventory.storage_backend}")
     resolved: dict[str, ResolvedProcess] = {}
     safe_processes = []
     for producer_id, definition in profile.processes.items():
@@ -36,12 +36,25 @@ def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | 
         if definition.command_ref not in node.commands:
             raise ValidationFailure(f"Node {node.node_id} does not define command {definition.command_ref}")
         command = node.commands[definition.command_ref]
-        if enforce_capabilities and node.transport != "local":
-            raise CapabilityDisabled(f"SSH execution is disabled in this increment: {node.node_id}")
         if enforce_capabilities and command.safety_class != "simulation":
             raise CapabilityDisabled(f"Only simulation commands are executable: {producer_id}")
         producer_dir = (run_dir / producer_id) if run_dir else Path(f"<run_dir>/{producer_id}")
-        context = {**parameters, "run_id": run_id or "<generated-at-preflight>", "run_dir": str(run_dir or "<run_dir>"), "producer_dir": str(producer_dir)}
+        if node.transport == "ssh":
+            if inventory.client_mount is None:
+                raise ValidationFailure("SSH producers require storage.client_mount")
+            execution_producer_dir = (
+                inventory.client_mount / "runs" / run_id / producer_id
+                if run_id else Path(f"{inventory.client_mount}/runs/<run_id>/{producer_id}")
+            )
+        else:
+            execution_producer_dir = producer_dir
+        context = {
+            **parameters,
+            "run_id": run_id or "<generated-at-preflight>",
+            "run_dir": str(run_dir or "<run_dir>"),
+            "producer_dir": str(execution_producer_dir),
+            "workspace": str(node.workspace),
+        }
         argv = tuple(_format_value(arg, context) for arg in command.argv)
         cwd = Path(_format_value(str(command.cwd), context)).expanduser()
         env = dict(command.env)
@@ -49,7 +62,10 @@ def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | 
             if key not in os.environ:
                 raise ValidationFailure(f"Required environment variable is not set: {key}")
             env[key] = os.environ[key]
-        resolved[producer_id] = ResolvedProcess(definition=definition, node=node, command=command, argv=argv, cwd=cwd, env=env, producer_dir=producer_dir)
+        resolved[producer_id] = ResolvedProcess(
+            definition=definition, node=node, command=command, argv=argv, cwd=cwd, env=env,
+            producer_dir=producer_dir, execution_producer_dir=execution_producer_dir,
+        )
         safe_processes.append({
             "producer_id": producer_id, "node_id": node.node_id, "role": definition.role, "transport": node.transport,
             "command_ref": command.command_id, "command_digest": _command_digest(command), "safety_class": command.safety_class,
@@ -75,4 +91,3 @@ def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | 
 def _command_digest(command) -> str:
     from .config import document_digest
     return document_digest({"command_id": command.command_id, "argv": list(command.argv), "cwd": str(command.cwd), "env_keys": sorted(command.env), "env_from": list(command.env_from), "safety_class": command.safety_class})
-

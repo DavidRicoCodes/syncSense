@@ -28,9 +28,10 @@ def test_fake_start_failure():
         adapter.start(spec())
 
 
-def test_real_ssh_is_not_constructible():
+def test_real_ssh_requires_explicit_remote_simulation_gate():
+    adapter = SshProcessAdapter()
     with pytest.raises(CapabilityDisabled):
-        SshProcessAdapter()
+        adapter.preflight(spec())
 
 
 def test_fake_ssh_uses_only_the_in_memory_process_contract():

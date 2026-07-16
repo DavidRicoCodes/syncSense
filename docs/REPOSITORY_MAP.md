@@ -10,8 +10,9 @@ SYNC/
 ├── constraints/               # Versiones verificadas para PC5 aarch64
 ├── src/sync_framework/         # Dominio, planificación, estado y orquestación
 ├── schemas/v1/                # Contratos JSON Schema versionados
-├── profiles/                  # Perfiles YAML; inicialmente nosync_passive
-├── config/                    # Inventario de simulación de ejemplo
+├── profiles/                  # nosync_passive y prueba distributed_dummy
+├── config/                    # Inventarios de ejemplo; el real se ignora
+├── tools/                     # Worker remoto dummy autónomo Python 3.10+
 ├── tests/                     # Unitarios e integración sin hardware ni red
 ├── ProjectDescription.md       # Fuente autoritativa del proyecto
 ├── README.md                   # Entrada y resumen del repositorio padre
@@ -23,7 +24,7 @@ SYNC/
 └── rx_sync/                    # Submódulo de pruebas multibanda X410
 ```
 
-El paquete padre implementa validación de inventarios, perfiles, eventos, artefactos y manifiestos; planificación segura; procesos locales `simulation`; SSH falso; estado atómico; supervisión foreground; publicación y recuperación. Los backends NFS/SSH reales y toda integración DSP/hardware están deliberadamente deshabilitados.
+El paquete padre implementa validación de contratos, procesos locales y SSH `simulation`, estado atómico, supervisión foreground, NFSv4 explícito, publicación, recuperación e inferencia dummy. La integración DSP/hardware permanece deshabilitada. El worker distribuido vive en `tools/remote_dummy_worker.py` para ejecutarse directamente desde clones Git sin instalar el paquete en los clientes.
 
 Los archivos locales `AGENTS.md` y `.codex/*` existen para mantener continuidad durante el desarrollo, pero están ignorados deliberadamente y no forman parte del producto versionado. `.codex/HANDOFF.md` es el punto de entrada para trasladar el workspace a PC5 y retomarlo sin el chat original.
 

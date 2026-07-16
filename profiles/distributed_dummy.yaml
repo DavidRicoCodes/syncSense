@@ -1,0 +1,91 @@
+schema_version: 1.0.0
+profile_id: distributed_dummy
+profile_version: 1.0.0
+experiment_type: distributed_dummy
+description: Distributed SSH/NFS simulation with synthetic, non-scientific data only.
+parameters:
+  label:
+    type: string
+    required: true
+  duration_s:
+    type: number
+    required: true
+    minimum: 0.1
+    maximum: 3600
+  scene:
+    type: string
+    required: false
+    default: synthetic
+clock_domains:
+  - clock_domain_id: synthetic_5g_epoch
+    owner_node_id: pc3pc4
+    kind: acquisition
+    epoch: synthetic_epoch
+    comparability_group: synthetic_5g_only
+  - clock_domain_id: synthetic_wifi_epoch
+    owner_node_id: pc3pc4
+    kind: acquisition
+    epoch: synthetic_epoch
+    comparability_group: synthetic_wifi_only
+clock_relationships:
+  - left: synthetic_5g_epoch
+    right: synthetic_wifi_epoch
+    relation: not_comparable
+    reason: independent_synthetic_timebases
+processes:
+  - producer_id: rx_5g
+    node_id: pc3pc4
+    role: receiver
+    modality: 5g
+    command_ref: distributed_dummy_worker
+    clock_domain_id: synthetic_5g_epoch
+    readiness: {type: json_file, path: runtime/status.json, json_pointer: /status, equals: ready}
+    timeouts: {readiness_s: 15, stop_grace_s: 5, kill_s: 2}
+    expected_artifacts:
+      - {artifact_id: rx_5g_features, artifact_type: synthetic_feature_5g, media_type: application/octet-stream, path: features.bin, required: true}
+      - {artifact_id: rx_5g_events, artifact_type: synthetic_temporal_event_index, media_type: application/x-ndjson, path: events.jsonl, required: true, event_index: true}
+      - {artifact_id: rx_5g_metrics, artifact_type: synthetic_metrics, media_type: application/json, path: metrics.json, required: true}
+      - {artifact_id: rx_5g_receipt, artifact_type: producer_result, media_type: application/json, path: producer-result.json, required: true}
+  - producer_id: rx_wifi
+    node_id: pc3pc4
+    role: receiver
+    modality: wifi
+    command_ref: distributed_dummy_worker
+    clock_domain_id: synthetic_wifi_epoch
+    readiness: {type: json_file, path: runtime/status.json, json_pointer: /status, equals: ready}
+    timeouts: {readiness_s: 15, stop_grace_s: 5, kill_s: 2}
+    expected_artifacts:
+      - {artifact_id: rx_wifi_features, artifact_type: synthetic_feature_wifi, media_type: application/octet-stream, path: features.bin, required: true}
+      - {artifact_id: rx_wifi_events, artifact_type: synthetic_temporal_event_index, media_type: application/x-ndjson, path: events.jsonl, required: true, event_index: true}
+      - {artifact_id: rx_wifi_metrics, artifact_type: synthetic_metrics, media_type: application/json, path: metrics.json, required: true}
+      - {artifact_id: rx_wifi_receipt, artifact_type: producer_result, media_type: application/json, path: producer-result.json, required: true}
+  - producer_id: tx_5g
+    node_id: pc1
+    role: transmitter
+    modality: 5g
+    command_ref: distributed_dummy_worker
+    readiness: {type: json_file, path: runtime/status.json, json_pointer: /status, equals: ready}
+    timeouts: {readiness_s: 15, stop_grace_s: 5, kill_s: 2}
+    expected_artifacts:
+      - {artifact_id: tx_5g_metrics, artifact_type: synthetic_metrics, media_type: application/json, path: metrics.json, required: true}
+      - {artifact_id: tx_5g_receipt, artifact_type: producer_result, media_type: application/json, path: producer-result.json, required: true}
+  - producer_id: tx_wifi
+    node_id: pc2
+    role: transmitter
+    modality: wifi
+    command_ref: distributed_dummy_worker
+    readiness: {type: json_file, path: runtime/status.json, json_pointer: /status, equals: ready}
+    timeouts: {readiness_s: 15, stop_grace_s: 5, kill_s: 2}
+    expected_artifacts:
+      - {artifact_id: tx_wifi_metrics, artifact_type: synthetic_metrics, media_type: application/json, path: metrics.json, required: true}
+      - {artifact_id: tx_wifi_receipt, artifact_type: producer_result, media_type: application/json, path: producer-result.json, required: true}
+orchestration:
+  start_groups:
+    - [rx_5g, rx_wifi]
+    - [tx_5g, tx_wifi]
+  stop_groups:
+    - [tx_5g, tx_wifi]
+    - [rx_wifi, rx_5g]
+  monitor_interval_s: 0.25
+  heartbeat_interval_s: 1.0
+  supervisor_stale_s: 5.0

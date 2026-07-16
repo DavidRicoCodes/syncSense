@@ -13,7 +13,7 @@
     "schema_version": {"const": "1.0.0"},
     "profile_id": {"$ref": "#/$defs/id"},
     "profile_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-    "experiment_type": {"enum": ["nosync_passive"]},
+    "experiment_type": {"enum": ["nosync_passive", "distributed_dummy"]},
     "description": {"type": "string"},
     "parameters": {
       "type": "object",
@@ -41,7 +41,7 @@
           "clock_domain_id": {"$ref": "#/$defs/id"},
           "owner_node_id": {"$ref": "#/$defs/id"},
           "kind": {"const": "acquisition"},
-          "epoch": {"enum": ["local_device_epoch", "shared_device_epoch"]},
+          "epoch": {"enum": ["local_device_epoch", "shared_device_epoch", "synthetic_epoch"]},
           "comparability_group": {"$ref": "#/$defs/id"}
         }
       }
@@ -133,4 +133,3 @@
     }
   }
 }
-

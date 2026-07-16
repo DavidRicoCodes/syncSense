@@ -46,6 +46,11 @@ class PublicationFailure(SyncError):
     exit_code = 6
 
 
+class InferenceFailure(SyncError):
+    code = "INFERENCE_FAILED"
+    exit_code = 7
+
+
 @dataclass(frozen=True)
 class CommandSpec:
     command_id: str
@@ -125,6 +130,7 @@ class ResolvedProcess:
     cwd: Path
     env: dict[str, str]
     producer_dir: Path
+    execution_producer_dir: Path
 
 
 @dataclass(frozen=True)
@@ -142,4 +148,3 @@ class BatchModelAdapter(Protocol):
     """Future batch inference boundary; no implementation is provided in v1."""
 
     def run(self, request: dict[str, Any]) -> dict[str, Any]: ...
-

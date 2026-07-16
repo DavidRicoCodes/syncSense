@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:producer-result",
+  "title": "ProducerResultV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "producer_id", "node_id", "simulation", "synthetic", "exit_code", "finished_at", "process", "artifacts"],
+  "$defs": {
+    "path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "producer_id": {"type": "string", "minLength": 1},
+    "node_id": {"type": "string", "minLength": 1},
+    "simulation": {"const": true},
+    "synthetic": {"const": true},
+    "exit_code": {"const": 0},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "process": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pid", "proc_start_ticks", "host"],
+      "properties": {
+        "pid": {"type": "integer", "minimum": 1},
+        "proc_start_ticks": {"type": "integer", "minimum": 0},
+        "host": {"type": "string", "minLength": 1}
+      }
+    },
+    "artifacts": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["path", "size_bytes", "sha256"],
+        "properties": {
+          "path": {"$ref": "#/$defs/path"},
+          "size_bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    }
+  }
+}

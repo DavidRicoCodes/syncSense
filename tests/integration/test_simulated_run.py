@@ -21,8 +21,8 @@ def test_nosync_passive_happy_path(inventory_path, profile_path):
     manifest = finalize_run(plan, store, repo_root=REPO_ROOT)
     assert manifest["state"] == "COMPLETE"
     assert manifest["inference_runs"] == []
-    assert manifest["git_revisions"]["parent"]["head"] is None
-    assert manifest["git_revisions"]["parent"]["worktree_state"] == "unborn"
+    assert len(manifest["git_revisions"]["parent"]["head"]) == 40
+    assert manifest["git_revisions"]["parent"]["worktree_state"] in {"clean", "dirty"}
     assert manifest["clock_relationships"] == [{
         "left": "pc3_5g_acquisition", "right": "pc4_wifi_acquisition",
         "relation": "not_comparable", "reason": "no_common_acquisition_timebase",

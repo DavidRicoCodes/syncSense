@@ -11,7 +11,7 @@ El repositorio contiene dos proyectos independientes como submódulos:
 - `modulos_rx_tx`: módulos de transmisión, recepción, captura, procesado e inferencia para 5G SSB y beacons WiFi con USRP.
 - `rx_sync`: prototipos de recepción simultánea multibanda con USRP X410 y pruebas iniciales de waveforms activas.
 
-El primer incremento seguro del framework padre ya está implementado como paquete Python `sync-framework`, con CLI `syncctl`. Ejecuta de extremo a extremo `nosync_passive` usando procesos locales de simulación, estado persistente, publicación atómica y recuperación. No controla aún NFS, SSH real, DSP, UHD, USRPs ni RF. Otro equipo desarrolla y entrena el modelo; el framework solo define por ahora su futuro contrato batch y no invoca inferencia.
+El framework padre está implementado como paquete Python `sync-framework`, con CLI `syncctl`. Además del recorrido local `nosync_passive`, incluye una prueba de infraestructura `distributed_dummy`: PC5 coordina workers sintéticos por SSH, comparte el dataset por NFSv4, publica una sesión verificable y ejecuta una inferencia dummy local. Este recorrido no ejecuta DSP, UHD, USRPs ni RF.
 
 ## Roles de los equipos
 
@@ -50,13 +50,15 @@ En un clon ya existente:
 git submodule update --init --recursive
 ```
 
-## Núcleo simulado disponible
+## Núcleo y prueba distribuida disponibles
 
 - Paquete puro Python 3.12 con layout `src/`, schemas JSON Schema v1 y perfil YAML `nosync_passive`.
 - Máquina de estados persistente, auditoría JSONL, `run_id`, checksums y publicación mediante `manifest.json` con estado `COMPLETE`.
 - Arranque receiver-first, parada transmitter-first, *dry-run*, procesos locales seguros, dobles de proceso/SSH y recuperación.
 - Dos dominios temporales RX explícitamente no comparables; no existe emparejamiento temporal 5G/WiFi.
-- Contrato batch validable para el futuro modelo externo, sin implementación ni supuestos sobre su lógica.
+- Contrato batch para el futuro modelo externo y adaptador dummy determinista, limitado a validar la integración posterior a una sesión `COMPLETE`.
+- Worker remoto autónomo Python 3.10+, routing SSH con autorización explícita, identidad PID/start-time y logs en PC5.
+- Provisionado NFSv4 explícito e idempotente, con verificación mediante sentinels y teardown limitado a recursos gestionados.
 
 Para inspeccionar el plan sin mutar el sistema:
 
@@ -67,11 +69,25 @@ PYTHONPATH=src python3 -m sync_framework.cli \
   --param label=example --param duration_s=1
 ```
 
-Los tests se ejecutan con `PYTHONPATH=src pytest`. El recorrido implementado sigue siendo exclusivamente local y simulado.
+Los tests se ejecutan con `PYTHONPATH=src pytest`. La captura y la inferencia de este incremento siguen siendo exclusivamente sintéticas, aunque el recorrido de infraestructura use SSH y NFS reales.
+
+La prueba distribuida utiliza un inventario local ignorado. El ejemplo sin datos del laboratorio está en `config/inventory.distributed.example.yaml`:
+
+```bash
+PYTHONPATH=src python3 -m sync_framework.cli \
+  --inventory config/inventory.local.yaml storage bootstrap --apply
+
+PYTHONPATH=src python3 -m sync_framework.cli \
+  --inventory config/inventory.local.yaml experiment run profiles/distributed_dummy.yaml \
+  --param label=lab-ssh-nfs --param duration_s=10 \
+  --inference dummy --allow-remote-simulation
+```
 
 ## Límites de esta fase
 
-- NFS y SSH real están deshabilitados por capacidad; no hay control de hardware ni ejecución DSP.
+- SSH real solo admite comandos `simulation` y exige `--allow-remote-simulation`; NFS solo cambia mediante `--apply`.
+- El perfil distribuido produce datos y eventos marcados como sintéticos. No valida captura científica ni sincronización de adquisición.
+- No hay control de hardware ni ejecución DSP.
 - `sync_reception`, los restantes perfiles experimentales y la inferencia externa siguen pendientes.
 - Los submódulos conservan su código e historial y no se han modificado.
 - Cualquier ampliación no contenida en la descripción se propone primero y requiere validación expresa.

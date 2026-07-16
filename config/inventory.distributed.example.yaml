@@ -1,0 +1,34 @@
+schema_version: 1.0.0
+inventory_id: distributed_dummy_example
+storage:
+  backend: nfs
+  root: /srv/sync-experiments
+  client_mount: /mnt/sync-experiments
+nodes:
+  - node_id: pc1
+    transport: ssh
+    workspace: /replace/with/pc1/syncSense
+    ssh: {host: pc1}
+    commands:
+      - command_id: distributed_dummy_worker
+        argv: [python3, "{workspace}/tools/remote_dummy_worker.py"]
+        cwd: "{workspace}"
+        safety_class: simulation
+  - node_id: pc2
+    transport: ssh
+    workspace: /replace/with/pc2/syncSense
+    ssh: {host: pc2}
+    commands:
+      - command_id: distributed_dummy_worker
+        argv: [python3, "{workspace}/tools/remote_dummy_worker.py"]
+        cwd: "{workspace}"
+        safety_class: simulation
+  - node_id: pc3pc4
+    transport: ssh
+    workspace: /replace/with/pc3pc4/syncSense
+    ssh: {host: pc3pc4}
+    commands:
+      - command_id: distributed_dummy_worker
+        argv: [python3, "{workspace}/tools/remote_dummy_worker.py"]
+        cwd: "{workspace}"
+        safety_class: simulation

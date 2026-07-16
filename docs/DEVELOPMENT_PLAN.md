@@ -16,7 +16,15 @@ Completado y validado exclusivamente con simulación local:
 - Contrato batch del modelo externo, sin adaptador ejecutable ni inferencia.
 - Tests unitarios e integración con procesos locales y SSH falsos.
 
-Permanecen pendientes todos los pasos que impliquen otros PCs, NFS, scripts DSP reales, UHD/USRP/RF, `sync_reception` o el modelo entregado por el otro equipo. Este incremento no equivale a haber completado la primera entrega hardware descrita más abajo.
+Se ha añadido un segundo incremento de infraestructura con SSH y NFS reales, pero solo para workers y datos sintéticos. Incluye el perfil `distributed_dummy`, verificación de clones Git, receipts por productor e inferencia dummy en PC5. Esto valida el camino de control y publicación, no equivale a captura científica ni a la primera aceptación hardware. Siguen pendientes scripts DSP reales, UHD/USRP/RF, `sync_reception` y el modelo entregado por el otro equipo.
+
+### Incremento distribuido de infraestructura
+
+- Los workers se ejecutan directamente desde clones Git verificados en `main`, sin instalar el framework en clientes ni inicializar submódulos.
+- El adaptador OpenSSH usa host keys estrictas, `BatchMode`, timeouts, keepalive e identidad local/remota PID + start-time.
+- NFSv4 se provisiona únicamente con `storage bootstrap --apply`; no modifica `fstab`, usa `root_squash`/`all_squash` y monta con `nosuid,nodev,noexec`.
+- `distributed_dummy` arranca RX antes que TX y para TX antes que RX sobre tres nodos lógicos, conservando dos clocks sintéticos `not_comparable`.
+- PC5 valida receipts y checksums, publica `manifest.json` y puede ejecutar `DummyBatchModelAdapter`. El resultado dummy solo prueba el contrato; no implementa inferencia científica.
 
 El desarrollo se realizará en este orden:
 

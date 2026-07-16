@@ -129,7 +129,7 @@ def test_planning_rejects_missing_references_and_capabilities(inventory_path, pr
 
     ssh_inventory = copy.deepcopy(inventory)
     ssh_inventory.nodes["pc3"] = replace(ssh_inventory.nodes["pc3"], transport="ssh")
-    with pytest.raises(CapabilityDisabled, match="SSH execution"):
+    with pytest.raises(ValidationFailure, match="client_mount"):
         build_plan(ssh_inventory, profile, parameters, enforce_capabilities=True)
 
     unsafe_inventory = copy.deepcopy(inventory)
@@ -141,8 +141,7 @@ def test_planning_rejects_missing_references_and_capabilities(inventory_path, pr
 
     nfs_inventory = copy.deepcopy(inventory)
     nfs_inventory = replace(nfs_inventory, storage_backend="nfs")
-    with pytest.raises(CapabilityDisabled, match="local storage"):
-        build_plan(nfs_inventory, profile, parameters, enforce_capabilities=True)
+    assert build_plan(nfs_inventory, profile, parameters, enforce_capabilities=True).inventory.storage_backend == "nfs"
 
     env_inventory = copy.deepcopy(inventory)
     env_inventory.nodes["pc3"].commands["simulate_rx_5g"] = replace(

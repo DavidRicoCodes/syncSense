@@ -11,10 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from .config import load_inventory, load_profile, resolve_parameters
+from .deployment import verify_remote_workspaces
 from .domain import CapabilityDisabled, ExecutionPlan, ProcessFailure, SyncError, ValidationFailure
 from .planning import build_plan
 from .processes.base import ProcessHandle, ProcessSpec
-from .processes.local import LocalProcessAdapter, same_process
+from .processes.local import same_process
+from .processes.router import ProcessRouter
 from .publication import publish_session, verify_published_manifest
 from .run_id import generate_run_id
 from .state import StateStore, utc_now
@@ -34,23 +36,39 @@ def _process_records(plan: ExecutionPlan) -> dict[str, Any]:
 
 def make_process_spec(plan: ExecutionPlan, producer_id: str) -> ProcessSpec:
     resolved = plan.processes[producer_id]
+    artifact_ids = {
+        "features": next((a.artifact_id for a in resolved.definition.expected_artifacts if a.artifact_type.startswith("synthetic_feature")), ""),
+    }
+    worker_config = {
+        "run_id": plan.run_id, "producer_id": producer_id, "node_id": resolved.definition.node_id,
+        "role": resolved.definition.role, "modality": resolved.definition.modality,
+        "output_dir": str(resolved.execution_producer_dir),
+        "clock_domain_id": resolved.definition.clock_domain_id or "",
+        "artifact_ids": artifact_ids,
+    }
     return ProcessSpec(
         producer_id=producer_id, argv=resolved.argv, cwd=resolved.cwd, env=resolved.env,
         log_path=(plan.run_dir or Path(".")) / ".control" / "logs" / f"{producer_id}.log",
         safety_class=resolved.command.safety_class,
+        transport=resolved.node.transport, ssh=resolved.node.ssh,
+        worker_config=worker_config if resolved.node.transport == "ssh" else None,
+        remote_runtime_dir=resolved.execution_producer_dir / "runtime" if resolved.node.transport == "ssh" else None,
+        shared_runtime_dir=resolved.producer_dir / "runtime" if resolved.node.transport == "ssh" else None,
     )
 
 
-def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_parameters: dict[str, str], *, storage_override: str | Path | None = None, dry_run: bool = False) -> tuple[ExecutionPlan, StateStore | None]:
+def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_parameters: dict[str, str], *, storage_override: str | Path | None = None, dry_run: bool = False, allow_remote_simulation: bool = False, repo_root: Path | None = None) -> tuple[ExecutionPlan, StateStore | None]:
     inventory = load_inventory(inventory_path, storage_override=storage_override)
     profile = load_profile(profile_path)
     parameters = resolve_parameters(profile, supplied_parameters)
     if dry_run:
         return build_plan(inventory, profile, parameters, enforce_capabilities=False), None
-    if inventory.storage_backend != "local":
-        raise CapabilityDisabled("NFS storage is not executable in this safe increment")
+    if any(node.transport == "ssh" for node in inventory.nodes.values()) and not allow_remote_simulation:
+        raise CapabilityDisabled("Remote simulation requires --allow-remote-simulation")
     # Capability and command resolution checks must happen before creating a run.
-    build_plan(inventory, profile, parameters, enforce_capabilities=True)
+    preview = build_plan(inventory, profile, parameters, enforce_capabilities=True)
+    if any(p.node.transport == "ssh" for p in preview.processes.values()):
+        verify_remote_workspaces(preview, repo_root=repo_root or Path(__file__).resolve().parents[2])
     run_id = generate_run_id()
     run_dir = create_run_layout(inventory.storage_root, run_id, list(profile.processes))
     plan = build_plan(inventory, profile, parameters, run_id=run_id, run_dir=run_dir, enforce_capabilities=True)
@@ -64,10 +82,11 @@ def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_par
     )
     atomic_write_json(run_dir / ".control" / "plan.json", plan.sanitized, mode=0o600)
     store.transition("PREFLIGHT", reason="preflight_started")
-    adapter = LocalProcessAdapter()
+    adapter = ProcessRouter(allow_remote_simulation=allow_remote_simulation)
     try:
         for producer_id in plan.processes:
-            adapter.preflight(make_process_spec(plan, producer_id))
+            spec = make_process_spec(plan, producer_id)
+            adapter.for_spec(spec).preflight(spec)
         # Creating the run layout already proves local write access. Also force a disk query.
         os.statvfs(run_dir)
         store.transition("ARMED", reason="preflight_passed")
@@ -110,7 +129,7 @@ def _read_json_pointer(value: Any, pointer: str) -> Any:
     return current
 
 
-def _is_ready(plan: ExecutionPlan, producer_id: str, adapter: LocalProcessAdapter, handle: ProcessHandle, started_monotonic: float) -> bool:
+def _is_ready(plan: ExecutionPlan, producer_id: str, adapter: Any, handle: ProcessHandle, started_monotonic: float) -> bool:
     status = adapter.probe(handle)
     if not status.running:
         raise ProcessFailure(f"Process exited before readiness: {producer_id} ({status.exit_code})")
@@ -125,7 +144,7 @@ def _is_ready(plan: ExecutionPlan, producer_id: str, adapter: LocalProcessAdapte
         return False
 
 
-def _stop_all(plan: ExecutionPlan, store: StateStore, adapter: LocalProcessAdapter, handles: dict[str, ProcessHandle], *, reason: str) -> None:
+def _stop_all(plan: ExecutionPlan, store: StateStore, router: ProcessRouter, handles: dict[str, ProcessHandle], *, reason: str) -> None:
     for group in plan.profile.stop_groups:
         for producer_id in group:
             handle = handles.get(producer_id)
@@ -136,6 +155,7 @@ def _stop_all(plan: ExecutionPlan, store: StateStore, adapter: LocalProcessAdapt
                 else:
                     continue
             _set_process(store, producer_id, status="stopping")
+            adapter = router.for_handle(handle)
             grace = plan.processes[producer_id].definition.timeouts["stop_grace_s"]
             status = adapter.stop(handle, grace)
             termination = reason
@@ -156,12 +176,12 @@ def _supervisor_identity() -> dict[str, Any]:
     return {"pid": os.getpid(), "proc_start_ticks": process_start_ticks(os.getpid()), "heartbeat_at": utc_now()}
 
 
-def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False) -> dict[str, Any]:
+def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, allow_remote_simulation: bool = False) -> dict[str, Any]:
     if dry_run:
         return {"action": "start", "run_id": plan.run_id, "start_groups": [list(g) for g in plan.profile.start_groups], "stop_groups": [list(g) for g in plan.profile.stop_groups], "mutating": False}
     if store.load()["state"] != "ARMED":
         raise ProcessFailure("Run must be ARMED before start")
-    adapter = LocalProcessAdapter()
+    router = ProcessRouter(allow_remote_simulation=allow_remote_simulation)
     handles: dict[str, ProcessHandle] = {}
     received_signal: list[int] = []
     previous_handlers: dict[int, Any] = {}
@@ -190,6 +210,7 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False) 
                 if received_signal:
                     raise KeyboardInterrupt
                 spec = make_process_spec(plan, producer_id)
+                adapter = router.for_spec(spec)
                 _set_process(store, producer_id, status="starting")
                 handle = adapter.start(spec)
                 handles[producer_id] = handle
@@ -202,7 +223,8 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False) 
                 if received_signal:
                     raise KeyboardInterrupt
                 for producer_id in list(pending):
-                    if _is_ready(plan, producer_id, adapter, handles[producer_id], starts[producer_id]):
+                    current_adapter = router.for_handle(handles[producer_id])
+                    if _is_ready(plan, producer_id, current_adapter, handles[producer_id], starts[producer_id]):
                         _set_process(store, producer_id, status="ready", ready_at=utc_now())
                         pending.remove(producer_id)
                     elif time.monotonic() >= deadlines[producer_id]:
@@ -216,16 +238,16 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False) 
             now = time.monotonic()
             state = store.load()
             if received_signal:
-                _stop_all(plan, store, adapter, handles, reason="signal")
+                _stop_all(plan, store, router, handles, reason="signal")
                 store.transition("ABORTED", reason=f"signal_{received_signal[0]}")
                 return store.load()
             if state.get("stop_request") or now - started >= duration:
                 reason = "operator_stop" if state.get("stop_request") else "duration_elapsed"
-                _stop_all(plan, store, adapter, handles, reason=reason)
+                _stop_all(plan, store, router, handles, reason=reason)
                 store.transition("FINALIZING", reason=reason)
                 return store.load()
             for producer_id, handle in handles.items():
-                status = adapter.probe(handle)
+                status = router.for_handle(handle).probe(handle)
                 if not status.running:
                     raise ProcessFailure(f"Process exited unexpectedly: {producer_id} ({status.exit_code})")
             if now - last_heartbeat >= plan.profile.orchestration["heartbeat_interval_s"]:
@@ -235,7 +257,7 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False) 
             time.sleep(plan.profile.orchestration["monitor_interval_s"])
     except KeyboardInterrupt:
         if handles:
-            _stop_all(plan, store, adapter, handles, reason="signal")
+            _stop_all(plan, store, router, handles, reason="signal")
         state = store.load()
         if state["state"] in {"ARMED", "RUNNING"}:
             store.transition("ABORTED", reason="signal_interrupt")
@@ -243,7 +265,7 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False) 
     except Exception as exc:
         try:
             if handles:
-                _stop_all(plan, store, adapter, handles, reason="failure")
+                _stop_all(plan, store, router, handles, reason="failure")
         finally:
             state = store.load()
             if state["state"] in {"ARMED", "RUNNING"}:
@@ -258,11 +280,12 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False) 
 
 def status_run(plan: ExecutionPlan, store: StateStore) -> dict[str, Any]:
     state = store.load()
-    adapter = LocalProcessAdapter()
+    router = ProcessRouter(allow_remote_simulation=True)
     health = {}
     for producer_id, record in state["processes"].items():
         if record.get("handle") and record["status"] not in {"stopped", "failed"}:
-            health[producer_id] = adapter.probe(ProcessHandle.from_dict(record["handle"])).__dict__
+            handle = ProcessHandle.from_dict(record["handle"])
+            health[producer_id] = router.for_handle(handle).probe(handle).__dict__
         else:
             health[producer_id] = {"running": False, "exit_code": record.get("exit_code"), "detail": record["status"]}
     return {"run_id": plan.run_id, "state": state["state"], "revision": state["revision"], "process_health": health, "stop_request": state.get("stop_request"), "last_error": state.get("last_error")}
@@ -282,7 +305,7 @@ def _supervisor_is_fresh(state: dict[str, Any], stale_s: float) -> bool:
     return (datetime.now(timezone.utc) - heartbeat).total_seconds() <= stale_s
 
 
-def stop_run(plan: ExecutionPlan, store: StateStore, *, reason: str = "operator", wait_s: float = 10.0, dry_run: bool = False) -> dict[str, Any]:
+def stop_run(plan: ExecutionPlan, store: StateStore, *, reason: str = "operator", wait_s: float = 10.0, dry_run: bool = False, allow_remote_simulation: bool = False) -> dict[str, Any]:
     state = store.load()
     if dry_run:
         return {"action": "stop", "run_id": plan.run_id, "state": state["state"], "stop_groups": [list(g) for g in plan.profile.stop_groups], "mutating": False}
@@ -300,9 +323,9 @@ def stop_run(plan: ExecutionPlan, store: StateStore, *, reason: str = "operator"
                 return current
             time.sleep(0.1)
         return store.load()
-    adapter = LocalProcessAdapter()
+    router = ProcessRouter(allow_remote_simulation=allow_remote_simulation)
     handles = {pid: ProcessHandle.from_dict(record["handle"]) for pid, record in state["processes"].items() if record.get("handle")}
-    _stop_all(plan, store, adapter, handles, reason="stale_supervisor_stop")
+    _stop_all(plan, store, router, handles, reason="stale_supervisor_stop")
     return store.transition("FINALIZING", reason="stale_supervisor_stopped")
 
 
@@ -313,7 +336,7 @@ def finalize_run(plan: ExecutionPlan, store: StateStore, *, repo_root: Path, dry
     return publish_session(plan, store, repo_root=repo_root)
 
 
-def recover_run(plan: ExecutionPlan, store: StateStore, *, repo_root: Path, dry_run: bool = False) -> dict[str, Any]:
+def recover_run(plan: ExecutionPlan, store: StateStore, *, repo_root: Path, dry_run: bool = False, allow_remote_simulation: bool = False) -> dict[str, Any]:
     state = store.load()
     action = "none"
     if (store.run_dir / "manifest.json").exists():
@@ -334,10 +357,10 @@ def recover_run(plan: ExecutionPlan, store: StateStore, *, repo_root: Path, dry_
         publish_session(plan, store, repo_root=repo_root)
     elif action == "abort_incomplete_run":
         if state["state"] == "RUNNING":
-            adapter = LocalProcessAdapter()
+            router = ProcessRouter(allow_remote_simulation=allow_remote_simulation)
             handles = {pid: ProcessHandle.from_dict(record["handle"]) for pid, record in state["processes"].items() if record.get("handle")}
             if handles:
-                _stop_all(plan, store, adapter, handles, reason="recovery")
+                _stop_all(plan, store, router, handles, reason="recovery")
         store.transition("ABORTED", reason="recovered_incomplete_run")
     elif action == "fail_incomplete_preflight":
         if state["state"] == "CREATED":

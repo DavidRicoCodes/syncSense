@@ -12,14 +12,14 @@
     "producer_id": {"type": "string", "minLength": 1},
     "sequence": {"type": "integer", "minimum": 0},
     "modality": {"enum": ["5g", "wifi"]},
-    "frame_type": {"enum": ["ssb", "wifi_beacon"]},
+    "frame_type": {"enum": ["ssb", "wifi_beacon", "synthetic_5g_frame", "synthetic_wifi_frame"]},
     "clock_domain_id": {"type": "string", "minLength": 1},
     "timestamp": {
       "type": "object", "additionalProperties": false,
       "required": ["ticks", "tick_rate_hz"],
       "properties": {"ticks": {"type": "integer", "minimum": 0}, "tick_rate_hz": {"type": "integer", "minimum": 1}}
     },
-    "reference_point": {"enum": ["ssb_pss_start", "wifi_ppdu_start"]},
+    "reference_point": {"enum": ["ssb_pss_start", "wifi_ppdu_start", "synthetic_frame_start"]},
     "detector": {
       "type": "object", "additionalProperties": false,
       "required": ["block_start_ticks", "offset_samples", "sample_rate_hz", "uncertainty_ticks"],
