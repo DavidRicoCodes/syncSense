@@ -1,0 +1,6 @@
+[submodule "modulos_rx_tx"]
+	path = modulos_rx_tx
+	url = https://github.com/ammendezuc3m/DT_sensing_fusion_WIFI5G.git
+[submodule "rx_sync"]
+	path = rx_sync
+	url = https://github.com/DavidRicoCodes/x410Multiband.git

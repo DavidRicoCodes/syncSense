@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:event",
+  "title": "TemporalEventV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "event_id", "producer_id", "sequence", "modality", "frame_type", "clock_domain_id", "timestamp", "reference_point", "detector", "capture_discontinuity", "artifact_ref"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "run_id": {"type": "string", "minLength": 1},
+    "event_id": {"type": "string", "minLength": 1},
+    "producer_id": {"type": "string", "minLength": 1},
+    "sequence": {"type": "integer", "minimum": 0},
+    "modality": {"enum": ["5g", "wifi"]},
+    "frame_type": {"enum": ["ssb", "wifi_beacon"]},
+    "clock_domain_id": {"type": "string", "minLength": 1},
+    "timestamp": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ticks", "tick_rate_hz"],
+      "properties": {"ticks": {"type": "integer", "minimum": 0}, "tick_rate_hz": {"type": "integer", "minimum": 1}}
+    },
+    "reference_point": {"enum": ["ssb_pss_start", "wifi_ppdu_start"]},
+    "detector": {
+      "type": "object", "additionalProperties": false,
+      "required": ["block_start_ticks", "offset_samples", "sample_rate_hz", "uncertainty_ticks"],
+      "properties": {
+        "block_start_ticks": {"type": "integer", "minimum": 0},
+        "offset_samples": {"type": "integer", "minimum": 0},
+        "sample_rate_hz": {"type": "integer", "minimum": 1},
+        "uncertainty_ticks": {"type": "integer", "minimum": 0}
+      }
+    },
+    "capture_discontinuity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["present"],
+      "properties": {"present": {"type": "boolean"}, "discontinuity_id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1}},
+      "if": {"properties": {"present": {"const": true}}},
+      "then": {"required": ["discontinuity_id", "reason"]},
+      "else": {"not": {"anyOf": [{"required": ["discontinuity_id"]}, {"required": ["reason"]}]}}
+    },
+    "artifact_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "row_index"],
+      "properties": {"artifact_id": {"type": "string", "minLength": 1}, "row_index": {"type": "integer", "minimum": 0}}
+    },
+    "host_observed_at": {"type": "string", "format": "date-time"},
+    "host_time_semantics": {"const": "operational_only"}
+  },
+  "dependentRequired": {"host_observed_at": ["host_time_semantics"], "host_time_semantics": ["host_observed_at"]}
+}

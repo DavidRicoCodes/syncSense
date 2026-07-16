@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:session-manifest",
+  "title": "SessionManifestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "state", "published_at", "profile", "inventory", "parameters", "git_revisions", "roles", "clock_domains", "clock_relationships", "producers", "inference_runs"],
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "revision": {
+      "type": "object", "additionalProperties": false, "required": ["head", "worktree_state", "dirty"],
+      "properties": {
+        "head": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+        "worktree_state": {"enum": ["unborn", "clean", "dirty"]}, "dirty": {"type": "boolean"}
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "run_id": {"type": "string", "pattern": "^run_[0-9]{8}T[0-9]{12}Z_[0-9a-f]{12}$"},
+    "state": {"const": "COMPLETE"},
+    "published_at": {"type": "string", "format": "date-time"},
+    "profile": {
+      "type": "object", "additionalProperties": false, "required": ["profile_id", "profile_version", "digest"],
+      "properties": {"profile_id": {"type": "string"}, "profile_version": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}}
+    },
+    "inventory": {
+      "type": "object", "additionalProperties": false, "required": ["inventory_id", "digest"],
+      "properties": {"inventory_id": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}}
+    },
+    "parameters": {"type": "object"},
+    "git_revisions": {
+      "type": "object", "additionalProperties": false, "required": ["parent", "modulos_rx_tx", "rx_sync"],
+      "properties": {"parent": {"$ref": "#/$defs/revision"}, "modulos_rx_tx": {"$ref": "#/$defs/revision"}, "rx_sync": {"$ref": "#/$defs/revision"}}
+    },
+    "roles": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["producer_id", "node_id", "role", "modality"],
+        "properties": {"producer_id": {"type": "string"}, "node_id": {"type": "string"}, "role": {"enum": ["receiver", "transmitter"]}, "modality": {"enum": ["5g", "wifi"]}}
+      }
+    },
+    "clock_domains": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["clock_domain_id", "owner_node_id", "kind", "epoch", "comparability_group"],
+        "properties": {
+          "clock_domain_id": {"type": "string"}, "owner_node_id": {"type": "string"}, "kind": {"const": "acquisition"},
+          "epoch": {"enum": ["local_device_epoch", "shared_device_epoch"]}, "comparability_group": {"type": "string"}
+        }
+      }
+    },
+    "clock_relationships": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["left", "right", "relation", "reason"],
+        "properties": {"left": {"type": "string"}, "right": {"type": "string"}, "relation": {"enum": ["not_comparable", "same_clock"]}, "reason": {"type": "string"}}
+      }
+    },
+    "producers": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["producer_id", "manifest_path", "manifest_checksum"],
+        "properties": {
+          "producer_id": {"type": "string"},
+          "manifest_path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+          "manifest_checksum": {"$ref": "#/$defs/digest"}
+        }
+      }
+    },
+    "inference_runs": {"type": "array", "maxItems": 0}
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:batch-model-request",
+  "title": "BatchModelRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "inference_id", "run_id", "session_manifest_path", "session_manifest_sha256", "adapter", "output_directory"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "inference_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "session_manifest_path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+    "session_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter_id", "adapter_version", "config_digest"],
+      "properties": {
+        "adapter_id": {"type": "string", "minLength": 1},
+        "adapter_version": {"type": "string", "minLength": 1},
+        "config_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "output_directory": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"}
+  }
+}

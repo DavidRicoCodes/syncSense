@@ -1,0 +1,74 @@
+schema_version: 1.0.0
+inventory_id: pc5_local_simulation
+storage:
+  backend: local
+  root: /tmp/sync-experiments
+nodes:
+  - node_id: pc2
+    transport: local
+    workspace: .
+    commands:
+      - command_id: simulate_tx_wifi
+        argv:
+          - python3
+          - -m
+          - sync_framework.testing.fake_worker
+          - --producer-id
+          - tx_wifi
+          - --role
+          - transmitter
+          - --modality
+          - wifi
+          - --run-id
+          - "{run_id}"
+          - --output-dir
+          - "{producer_dir}"
+        safety_class: simulation
+  - node_id: pc3
+    transport: local
+    workspace: .
+    commands:
+      - command_id: simulate_rx_5g
+        argv:
+          - python3
+          - -m
+          - sync_framework.testing.fake_worker
+          - --producer-id
+          - rx_5g
+          - --role
+          - receiver
+          - --modality
+          - 5g
+          - --run-id
+          - "{run_id}"
+          - --output-dir
+          - "{producer_dir}"
+          - --clock-domain-id
+          - pc3_5g_acquisition
+          - --artifact-id
+          - rx_5g_features
+        safety_class: simulation
+  - node_id: pc4
+    transport: local
+    workspace: .
+    commands:
+      - command_id: simulate_rx_wifi
+        argv:
+          - python3
+          - -m
+          - sync_framework.testing.fake_worker
+          - --producer-id
+          - rx_wifi
+          - --role
+          - receiver
+          - --modality
+          - wifi
+          - --run-id
+          - "{run_id}"
+          - --output-dir
+          - "{producer_dir}"
+          - --clock-domain-id
+          - pc4_wifi_acquisition
+          - --artifact-id
+          - rx_wifi_features
+        safety_class: simulation

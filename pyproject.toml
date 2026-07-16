@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.1.2", "wheel>=0.42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sync-framework"
+version = "0.1.0"
+description = "Safe experiment orchestration core for synchronized 5G/WiFi sensing"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "PyYAML>=6.0.1,<7",
+  "jsonschema>=4.10.3,<5",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=7.4.4,<9",
+  "pytest-cov>=4.1,<7",
+]
+build = ["build>=1.2,<2"]
+
+[project.scripts]
+syncctl = "sync_framework.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.data-files]
+"share/sync-framework/schemas/v1" = ["schemas/v1/*.json"]
+"share/sync-framework/profiles" = ["profiles/*.yaml"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]

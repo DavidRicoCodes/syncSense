@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:artifact",
+  "title": "ArtifactV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifact_id", "producer_id", "artifact_type", "media_type", "path", "size_bytes", "checksum"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "artifact_id": {"type": "string", "minLength": 1},
+    "producer_id": {"type": "string", "minLength": 1},
+    "artifact_type": {"type": "string", "minLength": 1},
+    "media_type": {"type": "string", "minLength": 1},
+    "path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"},
+    "size_bytes": {"type": "integer", "minimum": 0},
+    "checksum": {
+      "type": "object", "additionalProperties": false,
+      "required": ["algorithm", "hex"],
+      "properties": {"algorithm": {"const": "sha256"}, "hex": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+    },
+    "row_count": {"type": "integer", "minimum": 0},
+    "schema_ref": {"type": "string", "minLength": 1}
+  }
+}
+

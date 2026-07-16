@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:experiment-profile",
+  "title": "ExperimentProfileV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile_id", "profile_version", "experiment_type", "parameters", "clock_domains", "clock_relationships", "processes", "orchestration"],
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}
+  },
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "profile_id": {"$ref": "#/$defs/id"},
+    "profile_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "experiment_type": {"enum": ["nosync_passive"]},
+    "description": {"type": "string"},
+    "parameters": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "required"],
+        "properties": {
+          "type": {"enum": ["string", "integer", "number", "boolean"]},
+          "required": {"type": "boolean"},
+          "default": {},
+          "minimum": {"type": "number"},
+          "maximum": {"type": "number"}
+        }
+      }
+    },
+    "clock_domains": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["clock_domain_id", "owner_node_id", "kind", "epoch", "comparability_group"],
+        "properties": {
+          "clock_domain_id": {"$ref": "#/$defs/id"},
+          "owner_node_id": {"$ref": "#/$defs/id"},
+          "kind": {"const": "acquisition"},
+          "epoch": {"enum": ["local_device_epoch", "shared_device_epoch"]},
+          "comparability_group": {"$ref": "#/$defs/id"}
+        }
+      }
+    },
+    "clock_relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["left", "right", "relation", "reason"],
+        "properties": {
+          "left": {"$ref": "#/$defs/id"},
+          "right": {"$ref": "#/$defs/id"},
+          "relation": {"enum": ["not_comparable", "same_clock"]},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "processes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["producer_id", "node_id", "role", "modality", "command_ref", "readiness", "timeouts", "expected_artifacts"],
+        "properties": {
+          "producer_id": {"$ref": "#/$defs/id"},
+          "node_id": {"$ref": "#/$defs/id"},
+          "role": {"enum": ["receiver", "transmitter"]},
+          "modality": {"enum": ["5g", "wifi"]},
+          "command_ref": {"$ref": "#/$defs/id"},
+          "clock_domain_id": {"$ref": "#/$defs/id"},
+          "readiness": {
+            "oneOf": [
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["type", "grace_s"],
+                "properties": {"type": {"const": "process_running"}, "grace_s": {"type": "number", "minimum": 0}}
+              },
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["type", "path", "json_pointer", "equals"],
+                "properties": {"type": {"const": "json_file"}, "path": {"$ref": "#/$defs/path"}, "json_pointer": {"type": "string", "pattern": "^/"}, "equals": {}}
+              }
+            ]
+          },
+          "timeouts": {
+            "type": "object", "additionalProperties": false,
+            "required": ["readiness_s", "stop_grace_s", "kill_s"],
+            "properties": {
+              "readiness_s": {"type": "number", "exclusiveMinimum": 0},
+              "stop_grace_s": {"type": "number", "minimum": 0},
+              "kill_s": {"type": "number", "minimum": 0}
+            }
+          },
+          "expected_artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["artifact_id", "artifact_type", "media_type", "path", "required"],
+              "properties": {
+                "artifact_id": {"$ref": "#/$defs/id"},
+                "artifact_type": {"type": "string", "minLength": 1},
+                "media_type": {"type": "string", "minLength": 1},
+                "path": {"$ref": "#/$defs/path"},
+                "required": {"type": "boolean"},
+                "event_index": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        "allOf": [
+          {"if": {"properties": {"role": {"const": "receiver"}}}, "then": {"required": ["clock_domain_id"]}},
+          {"if": {"properties": {"role": {"const": "transmitter"}}}, "then": {"not": {"required": ["clock_domain_id"]}}}
+        ]
+      }
+    },
+    "orchestration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_groups", "stop_groups", "monitor_interval_s", "heartbeat_interval_s", "supervisor_stale_s"],
+      "properties": {
+        "start_groups": {"type": "array", "minItems": 1, "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/id"}}},
+        "stop_groups": {"type": "array", "minItems": 1, "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/id"}}},
+        "monitor_interval_s": {"type": "number", "exclusiveMinimum": 0},
+        "heartbeat_interval_s": {"type": "number", "exclusiveMinimum": 0},
+        "supervisor_stale_s": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  }
+}
+

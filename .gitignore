@@ -1,0 +1,74 @@
+# Contexto local de agentes (no versionar)
+/AGENTS.md
+/.codex/
+
+# Configuracion local, secretos y credenciales
+.env
+.env.*
+!.env.example
+/config/*.local.json
+/config/*.local.yaml
+/config/*.local.yml
+/config/secrets/
+*.pem
+*.p12
+*.pfx
+
+# Entornos y caches
+.venv/
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+.tox/
+.coverage
+htmlcov/
+
+# Editores y sistema operativo
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.nfs*
+nohup.out
+core
+core.*
+
+# Trabajo temporal y borradores locales
+/tmp/
+/temp/
+/scratch/
+/working/
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# Estado de ejecucion, procesos y logs
+/runtime/
+/logs/
+/pids/
+*.pid
+*.log
+
+# Datos y artefactos generados en el repositorio padre
+/data/
+/captures/
+/artifacts/
+/results/
+*.h5
+*.hdf5
+*.mat
+*.npy
+*.npz
+*.cf32
+
+# Empaquetado y cobertura futuros
+/build/
+/dist/
+*.egg-info/

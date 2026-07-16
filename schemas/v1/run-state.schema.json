@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:run-state",
+  "title": "RunStateV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "revision", "state", "created_at", "updated_at", "profile", "inventory", "inventory_path", "supervisor", "stop_request", "processes", "last_error", "history", "recovery_count"],
+  "$defs": {
+    "state_name": {"enum": ["CREATED", "PREFLIGHT", "ARMED", "RUNNING", "FINALIZING", "COMPLETE", "FAILED", "ABORTED"]},
+    "nullable_time": {"type": ["string", "null"], "format": "date-time"},
+    "handle": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["backend", "producer_id", "pid", "proc_start_ticks"],
+          "properties": {
+            "backend": {"type": "string", "minLength": 1}, "producer_id": {"type": "string", "minLength": 1},
+            "pid": {"type": "integer", "minimum": 1}, "proc_start_ticks": {"type": "integer", "minimum": 0}
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "run_id": {"type": "string", "pattern": "^run_[0-9]{8}T[0-9]{12}Z_[0-9a-f]{12}$"},
+    "revision": {"type": "integer", "minimum": 0},
+    "state": {"$ref": "#/$defs/state_name"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_id", "profile_version", "digest", "source_path", "parameters"],
+      "properties": {
+        "profile_id": {"type": "string"}, "profile_version": {"type": "string"},
+        "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "source_path": {"type": "string", "minLength": 1},
+        "parameters": {"type": "object"}
+      }
+    },
+    "inventory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["inventory_id", "digest"],
+      "properties": {"inventory_id": {"type": "string"}, "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+    },
+    "inventory_path": {"type": "string", "minLength": 1},
+    "supervisor": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["pid", "proc_start_ticks", "heartbeat_at"],
+          "properties": {
+            "pid": {"type": "integer", "minimum": 1}, "proc_start_ticks": {"type": "integer", "minimum": 0},
+            "heartbeat_at": {"type": "string", "format": "date-time"}
+          }
+        }
+      ]
+    },
+    "stop_request": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false, "required": ["requested_at", "reason"],
+          "properties": {"requested_at": {"type": "string", "format": "date-time"}, "reason": {"type": "string"}}
+        }
+      ]
+    },
+    "processes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "required": ["producer_id", "node_id", "role", "status", "handle", "started_at", "ready_at", "stopped_at", "exit_code", "termination_reason"],
+        "properties": {
+          "producer_id": {"type": "string"}, "node_id": {"type": "string"}, "role": {"enum": ["receiver", "transmitter"]},
+          "status": {"enum": ["planned", "starting", "running", "ready", "stopping", "stopped", "failed"]},
+          "handle": {"$ref": "#/$defs/handle"}, "started_at": {"$ref": "#/$defs/nullable_time"},
+          "ready_at": {"$ref": "#/$defs/nullable_time"}, "stopped_at": {"$ref": "#/$defs/nullable_time"},
+          "exit_code": {"type": ["integer", "null"]}, "termination_reason": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "last_error": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false, "required": ["code", "message", "at"],
+          "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "at": {"type": "string", "format": "date-time"}}
+        }
+      ]
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["seq", "from", "to", "at", "reason", "actor"],
+        "properties": {
+          "seq": {"type": "integer", "minimum": 0}, "from": {"$ref": "#/$defs/state_name"}, "to": {"$ref": "#/$defs/state_name"},
+          "at": {"type": "string", "format": "date-time"}, "reason": {"type": "string"}, "actor": {"type": "string"},
+          "error_code": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "recovery_count": {"type": "integer", "minimum": 0}
+  }
+}
