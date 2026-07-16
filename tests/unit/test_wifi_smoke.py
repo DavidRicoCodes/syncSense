@@ -120,6 +120,10 @@ def test_wifi_hardware_preflight_contract_is_fully_mockable(tmp_path, monkeypatc
     (run_dir / "tx_wifi").mkdir()
     plan = build_plan(inventory, profile, parameters, run_id="run_mock", run_dir=run_dir)
     _prepare_wifi_config(plan, REPO_ROOT)
+    effective = json.loads((run_dir / "rx_wifi" / "runtime" / "effective-config.json").read_text())
+    assert effective["waveform_config"]["detector"]["metric_threshold"] == 0.85
+    assert effective["output"]["feature_path"].endswith("/rx_wifi/features.jsonl")
+    assert effective["output"]["csi_raw_path"].endswith("/rx_wifi/csi.cf32")
     calls = []
 
     def fake_ssh(config, argv, **kwargs):

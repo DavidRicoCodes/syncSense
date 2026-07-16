@@ -87,6 +87,7 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
         raise ProcessFailure(f"Cannot load pinned WiFi RX config: {source}") from exc
     target = plan.processes["rx_wifi"].producer_dir / "runtime" / "effective-config.json"
     execution = plan.processes["rx_wifi"].execution_producer_dir
+    config["waveform_config"]["detector"]["metric_threshold"] = 0.85
     config["output"]["feature_path"] = str(execution / "features.jsonl")
     config["output"]["csi_raw_path"] = str(execution / "csi.cf32")
     atomic_write_json(target, config, mode=0o600)
