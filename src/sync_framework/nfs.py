@@ -121,6 +121,7 @@ def _install_export(text: str) -> None:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
+        _run_local(["sudo", "-n", "install", "-d", "-o", "root", "-g", "root", "-m", "0755", str(EXPORT_FILE.parent)])
         _run_local(["sudo", "-n", "install", "-o", "root", "-g", "root", "-m", "0644", temporary, str(EXPORT_FILE)])
     finally:
         Path(temporary).unlink(missing_ok=True)
