@@ -118,6 +118,12 @@ Este será el primer recorrido experimental completo:
 
 El dataset resultante mantendrá dos dominios de reloj explícitamente independientes. El framework no realizará emparejamiento temporal preciso. La ejecución del modelo se añadirá mediante el adaptador externo cuando su equipo entregue el contrato correspondiente.
 
+#### Incremento previo de integración WiFi
+
+Antes de incorporar RX 5G se valida el enlace PC2 → PC3PC4 → NFS → PC5 mediante `wifi_link_smoke`. El usuario elige entre 1 y 600 beacons; PC5 arranca el RX WiFi, espera una tasa observada de al menos 19 Msps, lanza el TX finito y drena el receptor hasta 2 s de silencio o 10 s como máximo. La publicación requiere al menos el 80 % de contadores, cierre JSONL/CF32 y ausencia de errores UHD/TX.
+
+Este recorrido se clasifica expresamente como `integration_smoke`: conserva los timestamps nativos del receptor solo como campos no verificados, no crea eventos temporales canónicos y no afirma alineación 5G/WiFi. La inferencia posterior sigue siendo dummy y solo resume solicitados, recibidos, perdidos y ratio.
+
 ### Perfiles activos iniciales
 
 Se prepararán los perfiles de `nosync_active` y `sync_reception_active`, pero solo se exigirá que validen estructuralmente. Su aceptación hardware se pospondrá hasta que estén disponibles los transmisores activos.

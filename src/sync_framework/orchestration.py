@@ -21,6 +21,8 @@ from .publication import publish_session, verify_published_manifest
 from .run_id import generate_run_id
 from .state import StateStore, utc_now
 from .storage import atomic_write_json, create_run_layout, run_directory
+from .wifi_smoke import available_memory_bytes, global_timeout_s, required_available_memory_bytes
+from .processes.ssh import run_ssh
 
 
 def _process_records(plan: ExecutionPlan) -> dict[str, Any]:
@@ -46,6 +48,15 @@ def make_process_spec(plan: ExecutionPlan, producer_id: str) -> ProcessSpec:
         "clock_domain_id": resolved.definition.clock_domain_id or "",
         "artifact_ids": artifact_ids,
     }
+    if resolved.command.safety_class != "simulation":
+        worker_config.update({
+            "worker_path": str(resolved.node.workspace / "tools" / "remote_process_worker.py"),
+            "argv": list(resolved.argv), "cwd": str(resolved.cwd), "env": resolved.env,
+            "safety_class": resolved.command.safety_class,
+            "artifacts": [a.path for a in resolved.definition.expected_artifacts if a.artifact_type != "producer_result"],
+        })
+        if producer_id == "rx_wifi":
+            worker_config["readiness_regex"] = r"STATUS \| rate=(?:19(?:\.[0-9]+)?|[2-9][0-9](?:\.[0-9]+)?) Msps"
     return ProcessSpec(
         producer_id=producer_id, argv=resolved.argv, cwd=resolved.cwd, env=resolved.env,
         log_path=(plan.run_dir or Path(".")) / ".control" / "logs" / f"{producer_id}.log",
@@ -57,21 +68,84 @@ def make_process_spec(plan: ExecutionPlan, producer_id: str) -> ProcessSpec:
     )
 
 
-def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_parameters: dict[str, str], *, storage_override: str | Path | None = None, dry_run: bool = False, allow_remote_simulation: bool = False, repo_root: Path | None = None) -> tuple[ExecutionPlan, StateStore | None]:
+def _allowed_safety(*, allow_remote_simulation: bool, allow_hardware_receive: bool, allow_rf_transmit: bool) -> set[str]:
+    allowed: set[str] = {"simulation"}
+    if allow_hardware_receive:
+        allowed.add("dsp")
+    if allow_rf_transmit:
+        allowed.add("rf")
+    return allowed
+
+
+def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
+    if plan.profile.experiment_type != "wifi_link_smoke":
+        return
+    source = repo_root / "modulos_rx_tx" / "configs" / "pipelines" / "wifi_beacon_online.json"
+    try:
+        config = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ProcessFailure(f"Cannot load pinned WiFi RX config: {source}") from exc
+    target = plan.processes["rx_wifi"].producer_dir / "runtime" / "effective-config.json"
+    execution = plan.processes["rx_wifi"].execution_producer_dir
+    config["output"]["feature_path"] = str(execution / "features.jsonl")
+    config["output"]["csi_raw_path"] = str(execution / "csi.cf32")
+    atomic_write_json(target, config, mode=0o600)
+
+
+def _hardware_preflight(plan: ExecutionPlan) -> None:
+    if plan.profile.experiment_type != "wifi_link_smoke":
+        return
+    tx = plan.processes["tx_wifi"]
+    rx = plan.processes["rx_wifi"]
+    if tx.node.transport != "ssh" or rx.node.transport != "ssh":
+        return
+    assert tx.node.ssh and rx.node.ssh
+    run_ssh(tx.node.ssh, ["python3", "-c", "import numpy, uhd"], timeout=20)
+    meminfo = run_ssh(tx.node.ssh, ["cat", "/proc/meminfo"], timeout=10).stdout
+    required = required_available_memory_bytes(int(plan.parameters["num_beacons"]))
+    available = available_memory_bytes(meminfo)
+    if available < required:
+        raise ProcessFailure(f"PC2 has insufficient available memory: {available} < {required}")
+    rx_binary = next((value for value in rx.argv if "online_waveform_pipeline" in value), None)
+    if not rx_binary:
+        raise ProcessFailure("RX command does not identify online_waveform_pipeline")
+    run_ssh(rx.node.ssh, ["test", "-x", rx_binary], timeout=10)
+    config_path = rx.producer_dir / "runtime" / "effective-config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    for resolved, serial in ((tx, next(tx.argv[i + 1] for i, value in enumerate(tx.argv[:-1]) if value == "--serial")), (rx, config["input"]["device_args"].split("serial=", 1)[1])):
+        assert resolved.node.ssh
+        found = run_ssh(resolved.node.ssh, ["uhd_find_devices", "--args", f"serial={serial}"], timeout=30)
+        if serial not in found.stdout:
+            raise ProcessFailure(f"Configured USRP was not discovered on {resolved.node.node_id}")
+
+
+def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_parameters: dict[str, str], *, storage_override: str | Path | None = None, dry_run: bool = False, allow_remote_simulation: bool = False, allow_hardware_receive: bool = False, allow_rf_transmit: bool = False, repo_root: Path | None = None) -> tuple[ExecutionPlan, StateStore | None]:
     inventory = load_inventory(inventory_path, storage_override=storage_override)
     profile = load_profile(profile_path)
     parameters = resolve_parameters(profile, supplied_parameters)
     if dry_run:
         return build_plan(inventory, profile, parameters, enforce_capabilities=False), None
-    if any(node.transport == "ssh" for node in inventory.nodes.values()) and not allow_remote_simulation:
-        raise CapabilityDisabled("Remote simulation requires --allow-remote-simulation")
+    allowed = _allowed_safety(
+        allow_remote_simulation=allow_remote_simulation,
+        allow_hardware_receive=allow_hardware_receive,
+        allow_rf_transmit=allow_rf_transmit,
+    )
+    for resolved in build_plan(inventory, profile, parameters, enforce_capabilities=False).processes.values():
+        if resolved.node.transport != "ssh":
+            continue
+        if resolved.command.safety_class == "simulation" and not allow_remote_simulation:
+            raise CapabilityDisabled("Remote simulation requires --allow-remote-simulation")
+        if resolved.command.safety_class == "dsp" and not allow_hardware_receive:
+            raise CapabilityDisabled("Hardware reception requires --allow-hardware-receive")
+        if resolved.command.safety_class == "rf" and not allow_rf_transmit:
+            raise CapabilityDisabled("RF transmission requires --allow-rf-transmit")
     # Capability and command resolution checks must happen before creating a run.
-    preview = build_plan(inventory, profile, parameters, enforce_capabilities=True)
+    preview = build_plan(inventory, profile, parameters, enforce_capabilities=True, allowed_safety_classes=allowed)
     if any(p.node.transport == "ssh" for p in preview.processes.values()):
         verify_remote_workspaces(preview, repo_root=repo_root or Path(__file__).resolve().parents[2])
     run_id = generate_run_id()
     run_dir = create_run_layout(inventory.storage_root, run_id, list(profile.processes))
-    plan = build_plan(inventory, profile, parameters, run_id=run_id, run_dir=run_dir, enforce_capabilities=True)
+    plan = build_plan(inventory, profile, parameters, run_id=run_id, run_dir=run_dir, enforce_capabilities=True, allowed_safety_classes=allowed)
     store = StateStore(run_dir)
     store.create(
         run_id=run_id,
@@ -82,8 +156,10 @@ def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_par
     )
     atomic_write_json(run_dir / ".control" / "plan.json", plan.sanitized, mode=0o600)
     store.transition("PREFLIGHT", reason="preflight_started")
-    adapter = ProcessRouter(allow_remote_simulation=allow_remote_simulation)
+    adapter = ProcessRouter(allow_remote_simulation=allow_remote_simulation, allow_hardware_receive=allow_hardware_receive, allow_rf_transmit=allow_rf_transmit)
     try:
+        _prepare_wifi_config(plan, repo_root or Path(__file__).resolve().parents[2])
+        _hardware_preflight(plan)
         for producer_id in plan.processes:
             spec = make_process_spec(plan, producer_id)
             adapter.for_spec(spec).preflight(spec)
@@ -96,7 +172,7 @@ def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_par
     return plan, store
 
 
-def load_plan_for_run(inventory_path: str | Path, run_id: str, *, storage_override: str | Path | None = None, enforce_capabilities: bool = True) -> tuple[ExecutionPlan, StateStore]:
+def load_plan_for_run(inventory_path: str | Path, run_id: str, *, storage_override: str | Path | None = None, enforce_capabilities: bool = True, allowed_safety_classes: set[str] | None = None) -> tuple[ExecutionPlan, StateStore]:
     inventory = load_inventory(inventory_path, storage_override=storage_override)
     run_dir = run_directory(inventory.storage_root, run_id)
     store = StateStore(run_dir)
@@ -106,7 +182,7 @@ def load_plan_for_run(inventory_path: str | Path, run_id: str, *, storage_overri
     profile = load_profile(state["profile"]["source_path"])
     if profile.digest != state["profile"]["digest"]:
         raise ValidationFailure("Profile changed after preflight; run cannot be resumed")
-    plan = build_plan(inventory, profile, state["profile"]["parameters"], run_id=run_id, run_dir=run_dir, enforce_capabilities=enforce_capabilities)
+    plan = build_plan(inventory, profile, state["profile"]["parameters"], run_id=run_id, run_dir=run_dir, enforce_capabilities=enforce_capabilities, allowed_safety_classes=allowed_safety_classes)
     return plan, store
 
 
@@ -147,6 +223,8 @@ def _is_ready(plan: ExecutionPlan, producer_id: str, adapter: Any, handle: Proce
 def _stop_all(plan: ExecutionPlan, store: StateStore, router: ProcessRouter, handles: dict[str, ProcessHandle], *, reason: str) -> None:
     for group in plan.profile.stop_groups:
         for producer_id in group:
+            if store.load()["processes"][producer_id].get("status") == "stopped":
+                continue
             handle = handles.get(producer_id)
             if handle is None:
                 record = store.load()["processes"][producer_id]
@@ -176,12 +254,12 @@ def _supervisor_identity() -> dict[str, Any]:
     return {"pid": os.getpid(), "proc_start_ticks": process_start_ticks(os.getpid()), "heartbeat_at": utc_now()}
 
 
-def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, allow_remote_simulation: bool = False) -> dict[str, Any]:
+def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, allow_remote_simulation: bool = False, allow_hardware_receive: bool = False, allow_rf_transmit: bool = False) -> dict[str, Any]:
     if dry_run:
         return {"action": "start", "run_id": plan.run_id, "start_groups": [list(g) for g in plan.profile.start_groups], "stop_groups": [list(g) for g in plan.profile.stop_groups], "mutating": False}
     if store.load()["state"] != "ARMED":
         raise ProcessFailure("Run must be ARMED before start")
-    router = ProcessRouter(allow_remote_simulation=allow_remote_simulation)
+    router = ProcessRouter(allow_remote_simulation=allow_remote_simulation, allow_hardware_receive=allow_hardware_receive, allow_rf_transmit=allow_rf_transmit)
     handles: dict[str, ProcessHandle] = {}
     received_signal: list[int] = []
     previous_handlers: dict[int, Any] = {}
@@ -233,7 +311,12 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
         store.transition("RUNNING", reason="all_processes_ready")
         started = time.monotonic()
         last_heartbeat = 0.0
-        duration = float(plan.parameters["duration_s"])
+        duration = float(plan.parameters.get("duration_s", 0))
+        completion = plan.profile.orchestration.get("completion")
+        overall_deadline = started + (global_timeout_s(int(plan.parameters["num_beacons"])) if completion else duration)
+        drain_started: float | None = None
+        last_growth = started
+        last_size = -1
         while True:
             now = time.monotonic()
             state = store.load()
@@ -241,15 +324,47 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
                 _stop_all(plan, store, router, handles, reason="signal")
                 store.transition("ABORTED", reason=f"signal_{received_signal[0]}")
                 return store.load()
-            if state.get("stop_request") or now - started >= duration:
-                reason = "operator_stop" if state.get("stop_request") else "duration_elapsed"
+            if state.get("stop_request"):
+                reason = "operator_stop"
                 _stop_all(plan, store, router, handles, reason=reason)
                 store.transition("FINALIZING", reason=reason)
                 return store.load()
+            if completion and now >= overall_deadline:
+                raise ProcessFailure("Global experiment timeout elapsed")
+            if completion:
+                finite_id = completion["finite_producer_id"]
+                finite_handle = handles[finite_id]
+                finite_status = router.for_handle(finite_handle).probe(finite_handle)
+                if not finite_status.running and drain_started is None:
+                    collected = router.for_handle(finite_handle).collect(finite_handle)
+                    if collected.exit_code != 0:
+                        raise ProcessFailure(f"Finite producer failed: {finite_id} ({collected.exit_code})")
+                    _set_process(store, finite_id, status="stopped", stopped_at=utc_now(), exit_code=0, termination_reason="completed")
+                    drain_started = now
+                    last_growth = now
+                if drain_started is not None:
+                    quiet_path = plan.run_dir / completion["quiet_artifact"]
+                    size = quiet_path.stat().st_size if quiet_path.exists() else 0
+                    if size != last_size:
+                        last_size = size
+                        last_growth = now
+                    quiet_s = float(plan.parameters[completion["quiet_s_parameter"]])
+                    max_drain_s = float(plan.parameters[completion["max_drain_s_parameter"]])
+                    if now - last_growth >= quiet_s or now - drain_started >= max_drain_s:
+                        _stop_all(plan, store, router, handles, reason="finite_tx_drain_complete")
+                        store.transition("FINALIZING", reason="finite_tx_drain_complete")
+                        return store.load()
+            elif now - started >= duration:
+                _stop_all(plan, store, router, handles, reason="duration_elapsed")
+                store.transition("FINALIZING", reason="duration_elapsed")
+                return store.load()
             for producer_id, handle in handles.items():
+                if store.load()["processes"][producer_id]["status"] == "stopped":
+                    continue
                 status = router.for_handle(handle).probe(handle)
                 if not status.running:
-                    raise ProcessFailure(f"Process exited unexpectedly: {producer_id} ({status.exit_code})")
+                    if not completion or producer_id != completion["finite_producer_id"]:
+                        raise ProcessFailure(f"Process exited unexpectedly: {producer_id} ({status.exit_code})")
             if now - last_heartbeat >= plan.profile.orchestration["heartbeat_interval_s"]:
                 heartbeat = utc_now()
                 store.update(lambda s: s["supervisor"].update(heartbeat_at=heartbeat) if s["supervisor"] else None)
@@ -305,7 +420,7 @@ def _supervisor_is_fresh(state: dict[str, Any], stale_s: float) -> bool:
     return (datetime.now(timezone.utc) - heartbeat).total_seconds() <= stale_s
 
 
-def stop_run(plan: ExecutionPlan, store: StateStore, *, reason: str = "operator", wait_s: float = 10.0, dry_run: bool = False, allow_remote_simulation: bool = False) -> dict[str, Any]:
+def stop_run(plan: ExecutionPlan, store: StateStore, *, reason: str = "operator", wait_s: float = 10.0, dry_run: bool = False, allow_remote_simulation: bool = False, allow_hardware_receive: bool = False, allow_rf_transmit: bool = False) -> dict[str, Any]:
     state = store.load()
     if dry_run:
         return {"action": "stop", "run_id": plan.run_id, "state": state["state"], "stop_groups": [list(g) for g in plan.profile.stop_groups], "mutating": False}
@@ -323,7 +438,7 @@ def stop_run(plan: ExecutionPlan, store: StateStore, *, reason: str = "operator"
                 return current
             time.sleep(0.1)
         return store.load()
-    router = ProcessRouter(allow_remote_simulation=allow_remote_simulation)
+    router = ProcessRouter(allow_remote_simulation=allow_remote_simulation, allow_hardware_receive=allow_hardware_receive, allow_rf_transmit=allow_rf_transmit)
     handles = {pid: ProcessHandle.from_dict(record["handle"]) for pid, record in state["processes"].items() if record.get("handle")}
     _stop_all(plan, store, router, handles, reason="stale_supervisor_stop")
     return store.transition("FINALIZING", reason="stale_supervisor_stopped")
@@ -336,7 +451,7 @@ def finalize_run(plan: ExecutionPlan, store: StateStore, *, repo_root: Path, dry
     return publish_session(plan, store, repo_root=repo_root)
 
 
-def recover_run(plan: ExecutionPlan, store: StateStore, *, repo_root: Path, dry_run: bool = False, allow_remote_simulation: bool = False) -> dict[str, Any]:
+def recover_run(plan: ExecutionPlan, store: StateStore, *, repo_root: Path, dry_run: bool = False, allow_remote_simulation: bool = False, allow_hardware_receive: bool = False, allow_rf_transmit: bool = False) -> dict[str, Any]:
     state = store.load()
     action = "none"
     if (store.run_dir / "manifest.json").exists():
@@ -357,7 +472,7 @@ def recover_run(plan: ExecutionPlan, store: StateStore, *, repo_root: Path, dry_
         publish_session(plan, store, repo_root=repo_root)
     elif action == "abort_incomplete_run":
         if state["state"] == "RUNNING":
-            router = ProcessRouter(allow_remote_simulation=allow_remote_simulation)
+            router = ProcessRouter(allow_remote_simulation=allow_remote_simulation, allow_hardware_receive=allow_hardware_receive, allow_rf_transmit=allow_rf_transmit)
             handles = {pid: ProcessHandle.from_dict(record["handle"]) for pid, record in state["processes"].items() if record.get("handle")}
             if handles:
                 _stop_all(plan, store, router, handles, reason="recovery")

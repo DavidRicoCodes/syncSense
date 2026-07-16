@@ -9,9 +9,13 @@ from .ssh import SshProcessAdapter
 
 
 class ProcessRouter:
-    def __init__(self, *, allow_remote_simulation: bool = False) -> None:
+    def __init__(self, *, allow_remote_simulation: bool = False, allow_hardware_receive: bool = False, allow_rf_transmit: bool = False) -> None:
         self.local = LocalProcessAdapter()
-        self.ssh = SshProcessAdapter(allow_remote_simulation=allow_remote_simulation)
+        self.ssh = SshProcessAdapter(
+            allow_remote_simulation=allow_remote_simulation,
+            allow_hardware_receive=allow_hardware_receive,
+            allow_rf_transmit=allow_rf_transmit,
+        )
 
     def for_spec(self, spec: ProcessSpec):
         if spec.transport == "local":

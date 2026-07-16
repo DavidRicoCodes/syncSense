@@ -13,7 +13,7 @@
     "schema_version": {"const": "1.0.0"},
     "profile_id": {"$ref": "#/$defs/id"},
     "profile_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-    "experiment_type": {"enum": ["nosync_passive", "distributed_dummy"]},
+    "experiment_type": {"enum": ["nosync_passive", "distributed_dummy", "wifi_link_smoke"]},
     "description": {"type": "string"},
     "parameters": {
       "type": "object",
@@ -74,6 +74,7 @@
           "modality": {"enum": ["5g", "wifi"]},
           "command_ref": {"$ref": "#/$defs/id"},
           "clock_domain_id": {"$ref": "#/$defs/id"},
+          "lifecycle": {"enum": ["continuous", "finite"], "default": "continuous"},
           "readiness": {
             "oneOf": [
               {
@@ -129,6 +130,16 @@
         "monitor_interval_s": {"type": "number", "exclusiveMinimum": 0},
         "heartbeat_interval_s": {"type": "number", "exclusiveMinimum": 0},
         "supervisor_stale_s": {"type": "number", "exclusiveMinimum": 0}
+        ,"completion": {
+          "type": "object", "additionalProperties": false,
+          "required": ["finite_producer_id", "quiet_artifact", "quiet_s_parameter", "max_drain_s_parameter"],
+          "properties": {
+            "finite_producer_id": {"$ref": "#/$defs/id"},
+            "quiet_artifact": {"$ref": "#/$defs/path"},
+            "quiet_s_parameter": {"$ref": "#/$defs/id"},
+            "max_drain_s_parameter": {"$ref": "#/$defs/id"}
+          }
+        }
       }
     }
   }

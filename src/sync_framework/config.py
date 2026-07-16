@@ -102,6 +102,7 @@ def load_profile(path: str | Path) -> ExperimentProfile:
             producer_id=item["producer_id"], node_id=item["node_id"], role=item["role"], modality=item["modality"],
             command_ref=item["command_ref"], clock_domain_id=item.get("clock_domain_id"), readiness=dict(item["readiness"]),
             timeouts={k: float(v) for k, v in item["timeouts"].items()}, expected_artifacts=artifacts,
+            lifecycle=item.get("lifecycle", "continuous"),
         )
     orchestration = raw["orchestration"]
     return ExperimentProfile(
@@ -111,7 +112,7 @@ def load_profile(path: str | Path) -> ExperimentProfile:
         processes=processes,
         start_groups=tuple(tuple(g) for g in orchestration["start_groups"]),
         stop_groups=tuple(tuple(g) for g in orchestration["stop_groups"]),
-        orchestration={k: float(v) for k, v in orchestration.items() if not k.endswith("groups")},
+        orchestration={k: v for k, v in orchestration.items() if not k.endswith("groups")},
         source_path=source, digest=document_digest(raw),
     )
 
@@ -156,4 +157,3 @@ def resolve_parameters(profile: ExperimentProfile, supplied: dict[str, str]) -> 
             raise ValidationFailure(f"Parameter {name} is above maximum {spec['maximum']}")
         resolved[name] = value
     return resolved
-

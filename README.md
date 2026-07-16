@@ -11,7 +11,7 @@ El repositorio contiene dos proyectos independientes como submódulos:
 - `modulos_rx_tx`: módulos de transmisión, recepción, captura, procesado e inferencia para 5G SSB y beacons WiFi con USRP.
 - `rx_sync`: prototipos de recepción simultánea multibanda con USRP X410 y pruebas iniciales de waveforms activas.
 
-El framework padre está implementado como paquete Python `sync-framework`, con CLI `syncctl`. Además del recorrido local `nosync_passive`, incluye una prueba de infraestructura `distributed_dummy`: PC5 coordina workers sintéticos por SSH, comparte el dataset por NFSv4, publica una sesión verificable y ejecuta una inferencia dummy local. Este recorrido no ejecuta DSP, UHD, USRPs ni RF.
+El framework padre está implementado como paquete Python `sync-framework`, con CLI `syncctl`. Además del recorrido local `nosync_passive` y la prueba sintética `distributed_dummy`, incluye el perfil hardware acotado `wifi_link_smoke`: PC2 transmite un número finito de beacons y PC3PC4 recibe CSI WiFi online sobre NFS. Este smoke no genera eventos temporales canónicos ni constituye todavía `nosync_passive` completo.
 
 ## Roles de los equipos
 
@@ -69,7 +69,7 @@ PYTHONPATH=src python3 -m sync_framework.cli \
   --param label=example --param duration_s=1
 ```
 
-Los tests se ejecutan con `PYTHONPATH=src pytest`. La captura y la inferencia de este incremento siguen siendo exclusivamente sintéticas, aunque el recorrido de infraestructura use SSH y NFS reales.
+Los tests se ejecutan con `PYTHONPATH=src pytest`. `distributed_dummy` sigue siendo exclusivamente sintético. El smoke WiFi requiere dos autorizaciones independientes y usa una inferencia dummy únicamente como comprobación de cierre del recorrido.
 
 La prueba distribuida utiliza un inventario local ignorado. El ejemplo sin datos del laboratorio está en `config/inventory.distributed.example.yaml`:
 
@@ -83,11 +83,22 @@ PYTHONPATH=src python3 -m sync_framework.cli \
   --inference dummy --allow-remote-simulation
 ```
 
+El smoke WiFi usa el inventario local ignorado (seriales y rutas nunca se versionan):
+
+```bash
+PYTHONPATH=src python3 -m sync_framework.cli \
+  --inventory config/inventory.local.yaml experiment run profiles/wifi_link_smoke.yaml \
+  --param label=wifi-smoke-50 --param num_beacons=50 \
+  --inference dummy --allow-hardware-receive --allow-rf-transmit
+```
+
+PC5 arranca primero el RX, exige un `STATUS` de al menos 19 Msps y solo entonces arranca el TX. Tras finalizar el TX, detiene el RX después de 2 s sin crecimiento del JSONL o, como máximo, 10 s de drenaje. La publicación exige al menos `ceil(0.8 × num_beacons)`, 52 complejos por fila, cierre exacto JSONL/CF32, cero errores UHD y `Zero sends: 0`.
+
 ## Límites de esta fase
 
-- SSH real solo admite comandos `simulation` y exige `--allow-remote-simulation`; NFS solo cambia mediante `--apply`.
+- SSH real admite simulaciones con `--allow-remote-simulation`; el smoke hardware exige simultáneamente `--allow-hardware-receive` y `--allow-rf-transmit`. NFS solo cambia mediante `--apply`.
 - El perfil distribuido produce datos y eventos marcados como sintéticos. No valida captura científica ni sincronización de adquisición.
-- No hay control de hardware ni ejecución DSP.
+- La única integración hardware del padre es el smoke WiFi acotado; RX 5G y el recorrido científico `nosync_passive` completo siguen pendientes.
 - `sync_reception`, los restantes perfiles experimentales y la inferencia externa siguen pendientes.
 - Los submódulos conservan su código e historial y no se han modificado.
 - Cualquier ampliación no contenida en la descripción se propone primero y requiere validación expresa.

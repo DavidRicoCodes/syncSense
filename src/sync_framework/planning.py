@@ -10,7 +10,10 @@ from typing import Any
 from .domain import CapabilityDisabled, ExecutionPlan, ResolvedProcess, ValidationFailure
 
 
-ALLOWED_PLACEHOLDERS = {"run_id", "run_dir", "producer_dir", "workspace", "label", "scene", "duration_s"}
+ALLOWED_PLACEHOLDERS = {
+    "run_id", "run_dir", "producer_dir", "workspace", "label", "scene", "duration_s",
+    "num_beacons", "rx_quiet_s", "rx_max_drain_s", "effective_config",
+}
 
 
 def _format_value(value: str, context: dict[str, Any]) -> str:
@@ -24,7 +27,7 @@ def _format_value(value: str, context: dict[str, Any]) -> str:
         raise ValidationFailure(f"Command requires unresolved placeholder: {exc.args[0]}") from exc
 
 
-def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | None = None, run_dir: Path | None = None, enforce_capabilities: bool = False) -> ExecutionPlan:
+def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | None = None, run_dir: Path | None = None, enforce_capabilities: bool = False, allowed_safety_classes: set[str] | None = None) -> ExecutionPlan:
     if enforce_capabilities and inventory.storage_backend not in {"local", "nfs"}:
         raise CapabilityDisabled(f"Unsupported storage backend: {inventory.storage_backend}")
     resolved: dict[str, ResolvedProcess] = {}
@@ -36,8 +39,11 @@ def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | 
         if definition.command_ref not in node.commands:
             raise ValidationFailure(f"Node {node.node_id} does not define command {definition.command_ref}")
         command = node.commands[definition.command_ref]
-        if enforce_capabilities and command.safety_class != "simulation":
-            raise CapabilityDisabled(f"Only simulation commands are executable: {producer_id}")
+        allowed = {"simulation"} if allowed_safety_classes is None else allowed_safety_classes
+        if enforce_capabilities and command.safety_class not in allowed:
+            if allowed_safety_classes is None:
+                raise CapabilityDisabled(f"Only simulation commands are executable: {producer_id}")
+            raise CapabilityDisabled(f"Safety class {command.safety_class} is not authorized: {producer_id}")
         producer_dir = (run_dir / producer_id) if run_dir else Path(f"<run_dir>/{producer_id}")
         if node.transport == "ssh":
             if inventory.client_mount is None:
@@ -54,10 +60,11 @@ def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | 
             "run_dir": str(run_dir or "<run_dir>"),
             "producer_dir": str(execution_producer_dir),
             "workspace": str(node.workspace),
+            "effective_config": str(execution_producer_dir / "runtime" / "effective-config.json"),
         }
         argv = tuple(_format_value(arg, context) for arg in command.argv)
         cwd = Path(_format_value(str(command.cwd), context)).expanduser()
-        env = dict(command.env)
+        env = {key: _format_value(value, context) for key, value in command.env.items()}
         for key in command.env_from:
             if key not in os.environ:
                 raise ValidationFailure(f"Required environment variable is not set: {key}")
@@ -69,7 +76,7 @@ def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | 
         safe_processes.append({
             "producer_id": producer_id, "node_id": node.node_id, "role": definition.role, "transport": node.transport,
             "command_ref": command.command_id, "command_digest": _command_digest(command), "safety_class": command.safety_class,
-            "producer_dir": str(producer_dir),
+            "producer_dir": str(producer_dir), "lifecycle": definition.lifecycle,
         })
     sanitized = {
         "profile_id": profile.profile_id,

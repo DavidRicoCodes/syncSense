@@ -1,0 +1,58 @@
+schema_version: 1.0.0
+profile_id: wifi_link_smoke
+profile_version: 1.0.0
+experiment_type: wifi_link_smoke
+description: Hardware integration smoke for finite PC2 WiFi beacon TX and online PC3PC4 WiFi RX; not a scientific timestamp dataset.
+parameters:
+  label: {type: string, required: true}
+  num_beacons: {type: integer, required: true, minimum: 1, maximum: 600}
+  rx_quiet_s: {type: number, required: false, default: 2, minimum: 0.1, maximum: 30}
+  rx_max_drain_s: {type: number, required: false, default: 10, minimum: 1, maximum: 60}
+clock_domains:
+  - clock_domain_id: pc3pc4_wifi_acquisition
+    owner_node_id: pc3pc4
+    kind: acquisition
+    epoch: local_device_epoch
+    comparability_group: wifi_smoke_only
+clock_relationships: []
+processes:
+  - producer_id: rx_wifi
+    node_id: pc3pc4
+    role: receiver
+    modality: wifi
+    command_ref: wifi_online_rx
+    lifecycle: continuous
+    clock_domain_id: pc3pc4_wifi_acquisition
+    readiness: {type: json_file, path: runtime/status.json, json_pointer: /status, equals: ready}
+    timeouts: {readiness_s: 30, stop_grace_s: 8, kill_s: 2}
+    expected_artifacts:
+      - {artifact_id: rx_wifi_features, artifact_type: wifi_csi_feature_rows, media_type: application/x-ndjson, path: features.jsonl, required: true}
+      - {artifact_id: rx_wifi_csi, artifact_type: wifi_csi_cf32, media_type: application/octet-stream, path: csi.cf32, required: true}
+      - {artifact_id: rx_wifi_log, artifact_type: process_log, media_type: text/plain, path: process.log, required: true}
+      - {artifact_id: rx_wifi_receipt, artifact_type: producer_result, media_type: application/json, path: producer-result.json, required: true}
+  - producer_id: tx_wifi
+    node_id: pc2
+    role: transmitter
+    modality: wifi
+    command_ref: wifi_finite_tx
+    lifecycle: finite
+    readiness: {type: process_running, grace_s: 0}
+    timeouts: {readiness_s: 15, stop_grace_s: 5, kill_s: 2}
+    expected_artifacts:
+      - {artifact_id: tx_wifi_log, artifact_type: process_log, media_type: text/plain, path: process.log, required: true}
+      - {artifact_id: tx_wifi_receipt, artifact_type: producer_result, media_type: application/json, path: producer-result.json, required: true}
+orchestration:
+  start_groups:
+    - [rx_wifi]
+    - [tx_wifi]
+  stop_groups:
+    - [tx_wifi]
+    - [rx_wifi]
+  monitor_interval_s: 0.25
+  heartbeat_interval_s: 1.0
+  supervisor_stale_s: 5.0
+  completion:
+    finite_producer_id: tx_wifi
+    quiet_artifact: rx_wifi/features.jsonl
+    quiet_s_parameter: rx_quiet_s
+    max_drain_s_parameter: rx_max_drain_s

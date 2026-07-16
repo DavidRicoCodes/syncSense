@@ -102,6 +102,7 @@ class ProcessDefinition:
     readiness: dict[str, Any]
     timeouts: dict[str, float]
     expected_artifacts: tuple[ExpectedArtifact, ...]
+    lifecycle: str = "continuous"
 
 
 @dataclass(frozen=True)
@@ -116,7 +117,7 @@ class ExperimentProfile:
     processes: dict[str, ProcessDefinition]
     start_groups: tuple[tuple[str, ...], ...]
     stop_groups: tuple[tuple[str, ...], ...]
-    orchestration: dict[str, float]
+    orchestration: dict[str, Any]
     source_path: Path
     digest: str
 

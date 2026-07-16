@@ -14,9 +14,10 @@
     "run_id": {"type": "string", "minLength": 1},
     "producer_id": {"type": "string", "minLength": 1},
     "node_id": {"type": "string", "minLength": 1},
-    "simulation": {"const": true},
-    "synthetic": {"const": true},
-    "exit_code": {"const": 0},
+    "simulation": {"type": "boolean"},
+    "synthetic": {"type": "boolean"},
+    "exit_code": {"type": "integer"},
+    "started_at": {"type": "string", "format": "date-time"},
     "finished_at": {"type": "string", "format": "date-time"},
     "process": {
       "type": "object", "additionalProperties": false,

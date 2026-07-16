@@ -51,6 +51,20 @@ class DummyBatchModelAdapter:
             "producer_ids": sorted(item["producer_id"] for item in producer_manifests),
             "note": "Deterministic orchestration test only; no sensing or ML logic was executed.",
         }
+        if manifest["profile"]["profile_id"] == "wifi_link_smoke":
+            requested = int(manifest["parameters"]["num_beacons"])
+            received = next(
+                int(artifact["row_count"])
+                for producer in producer_manifests if producer["producer_id"] == "rx_wifi"
+                for artifact in producer["artifacts"] if artifact["artifact_type"] == "wifi_csi_feature_rows"
+            )
+            summary["wifi_smoke"] = {
+                "beacons_requested": requested,
+                "frames_received": received,
+                "frames_lost": requested - received,
+                "receive_ratio": received / requested,
+                "input_data": "real_hardware_integration_smoke",
+            }
         summary_path = output_dir / "summary.json"
         atomic_write_json(summary_path, summary)
         artifact = {

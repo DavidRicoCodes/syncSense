@@ -56,27 +56,42 @@ def run_ssh(config: dict[str, Any], argv: list[str], *, timeout: float = 15.0, c
 
 
 class SshProcessAdapter:
-    def __init__(self, *, allow_remote_simulation: bool = False):
+    def __init__(self, *, allow_remote_simulation: bool = False, allow_hardware_receive: bool = False, allow_rf_transmit: bool = False):
         self.allow_remote_simulation = allow_remote_simulation
+        self.allow_hardware_receive = allow_hardware_receive
+        self.allow_rf_transmit = allow_rf_transmit
         self._processes: dict[int, subprocess.Popen[bytes]] = {}
         self._logs: dict[int, IO[bytes]] = {}
 
     def preflight(self, spec: ProcessSpec) -> None:
-        if not self.allow_remote_simulation:
+        if spec.safety_class == "simulation" and not self.allow_remote_simulation:
             raise CapabilityDisabled("Remote simulation requires --allow-remote-simulation")
-        if spec.safety_class != "simulation":
-            raise CapabilityDisabled(f"Remote command is not simulation: {spec.producer_id}")
+        if spec.safety_class == "dsp" and not self.allow_hardware_receive:
+            raise CapabilityDisabled("Hardware reception requires --allow-hardware-receive")
+        if spec.safety_class == "rf" and not self.allow_rf_transmit:
+            raise CapabilityDisabled("RF transmission requires --allow-rf-transmit")
+        if spec.safety_class not in {"simulation", "dsp", "rf"}:
+            raise CapabilityDisabled(f"Unsupported remote safety class: {spec.safety_class}")
         if not spec.ssh or not spec.worker_config or not spec.remote_runtime_dir or not spec.shared_runtime_dir:
             raise ProcessFailure(f"Incomplete SSH process specification: {spec.producer_id}")
         if shutil.which("ssh") is None:
             raise ProcessFailure("OpenSSH client is not available")
         run_ssh(spec.ssh, ["true"], timeout=10)
-        worker_path = Path(spec.argv[1]) if len(spec.argv) > 1 else None
-        if spec.argv[:1] != ("python3",) or worker_path is None:
-            raise ProcessFailure("Remote simulations must use the standalone Python worker")
+        worker_path = self._worker_path(spec)
+        if worker_path is None:
+            raise ProcessFailure("Remote process has no standalone worker")
         run_ssh(spec.ssh, ["test", "-f", str(worker_path)], timeout=10)
         output_dir = str(spec.worker_config["output_dir"])
         run_ssh(spec.ssh, ["test", "-d", output_dir, "-a", "-w", output_dir], timeout=10)
+
+    @staticmethod
+    def _worker_path(spec: ProcessSpec) -> Path | None:
+        configured = (spec.worker_config or {}).get("worker_path")
+        if configured:
+            return Path(configured)
+        if spec.safety_class == "simulation" and spec.argv[:1] == ("python3",) and len(spec.argv) > 1:
+            return Path(spec.argv[1])
+        return None
 
     def start(self, spec: ProcessSpec) -> ProcessHandle:
         self.preflight(spec)
@@ -84,7 +99,9 @@ class SshProcessAdapter:
         encoded = base64.urlsafe_b64encode(
             json.dumps(spec.worker_config, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).decode("ascii").rstrip("=")
-        argv = list(spec.argv) + ["run", "--spec", encoded]
+        worker_path = self._worker_path(spec)
+        assert worker_path is not None
+        argv = ["python3", str(worker_path), "run", "--spec", encoded]
         spec.log_path.parent.mkdir(parents=True, exist_ok=True)
         log = spec.log_path.open("ab", buffering=0)
         try:
@@ -97,13 +114,11 @@ class SshProcessAdapter:
             raise
         self._processes[process.pid] = process
         self._logs[process.pid] = log
+        local_start_ticks = process_start_ticks(process.pid)
         identity_path = spec.shared_runtime_dir / "process.json"
         deadline = time.monotonic() + 8.0
         identity: dict[str, Any] | None = None
         while time.monotonic() < deadline:
-            if process.poll() is not None:
-                self.collect(ProcessHandle("ssh", spec.producer_id, process.pid, process_start_ticks(process.pid) if Path(f"/proc/{process.pid}").exists() else 0))
-                raise ProcessFailure(f"Remote worker exited before publishing identity: {spec.producer_id}")
             try:
                 candidate = json.loads(identity_path.read_text(encoding="utf-8"))
                 if isinstance(candidate.get("pid"), int) and isinstance(candidate.get("proc_start_ticks"), int):
@@ -111,6 +126,9 @@ class SshProcessAdapter:
                     break
             except (OSError, json.JSONDecodeError):
                 pass
+            if process.poll() is not None:
+                self.collect(ProcessHandle("ssh", spec.producer_id, process.pid, process_start_ticks(process.pid) if Path(f"/proc/{process.pid}").exists() else 0))
+                raise ProcessFailure(f"Remote worker exited before publishing identity: {spec.producer_id}")
             time.sleep(0.05)
         if identity is None:
             process.terminate()
@@ -118,9 +136,9 @@ class SshProcessAdapter:
             raise ProcessFailure(f"Remote worker identity timeout: {spec.producer_id}")
         return ProcessHandle(
             backend="ssh", producer_id=spec.producer_id, pid=process.pid,
-            proc_start_ticks=process_start_ticks(process.pid), ssh_host=ssh_target(spec.ssh),
+            proc_start_ticks=local_start_ticks, ssh_host=ssh_target(spec.ssh),
             remote_pid=identity["pid"], remote_start_ticks=identity["proc_start_ticks"],
-            worker_path=spec.argv[1], remote_runtime_dir=str(spec.remote_runtime_dir),
+            worker_path=str(worker_path), remote_runtime_dir=str(spec.remote_runtime_dir),
         )
 
     def _config_for(self, handle: ProcessHandle) -> dict[str, Any]:

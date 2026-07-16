@@ -29,6 +29,8 @@
       "properties": {"inventory_id": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}}
     },
     "parameters": {"type": "object"},
+    "dataset_qualification": {"enum": ["integration_smoke", "framework_validation"]},
+    "timestamp_semantics": {"type": "string", "minLength": 1},
     "git_revisions": {
       "type": "object", "additionalProperties": false, "required": ["parent", "modulos_rx_tx", "rx_sync"],
       "properties": {"parent": {"$ref": "#/$defs/revision"}, "modulos_rx_tx": {"$ref": "#/$defs/revision"}, "rx_sync": {"$ref": "#/$defs/revision"}}

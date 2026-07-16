@@ -74,17 +74,23 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--param", action="append", default=[])
     run.add_argument("--inference", choices=["dummy"], required=True)
     run.add_argument("--allow-remote-simulation", action="store_true")
+    run.add_argument("--allow-hardware-receive", action="store_true")
+    run.add_argument("--allow-rf-transmit", action="store_true")
 
     preflight_parser = commands.add_parser("preflight")
     preflight_parser.add_argument("profile")
     preflight_parser.add_argument("--param", action="append", default=[])
     preflight_parser.add_argument("--dry-run", action="store_true")
     preflight_parser.add_argument("--allow-remote-simulation", action="store_true")
+    preflight_parser.add_argument("--allow-hardware-receive", action="store_true")
+    preflight_parser.add_argument("--allow-rf-transmit", action="store_true")
 
     start = commands.add_parser("start")
     start.add_argument("run_id")
     start.add_argument("--dry-run", action="store_true")
     start.add_argument("--allow-remote-simulation", action="store_true")
+    start.add_argument("--allow-hardware-receive", action="store_true")
+    start.add_argument("--allow-rf-transmit", action="store_true")
 
     status = commands.add_parser("status")
     status.add_argument("run_id")
@@ -95,6 +101,8 @@ def build_parser() -> argparse.ArgumentParser:
     stop.add_argument("--wait", type=float, default=10.0)
     stop.add_argument("--dry-run", action="store_true")
     stop.add_argument("--allow-remote-simulation", action="store_true")
+    stop.add_argument("--allow-hardware-receive", action="store_true")
+    stop.add_argument("--allow-rf-transmit", action="store_true")
 
     finalize = commands.add_parser("finalize")
     finalize.add_argument("run_id")
@@ -104,6 +112,8 @@ def build_parser() -> argparse.ArgumentParser:
     recover.add_argument("run_id")
     recover.add_argument("--dry-run", action="store_true")
     recover.add_argument("--allow-remote-simulation", action="store_true")
+    recover.add_argument("--allow-hardware-receive", action="store_true")
+    recover.add_argument("--allow-rf-transmit", action="store_true")
 
     inference = commands.add_parser("inference")
     inference_commands = inference.add_subparsers(dest="inference_command", required=True)
@@ -147,10 +157,14 @@ def dispatch(args: argparse.Namespace) -> tuple[Any, int]:
         if args.experiment_command == "run":
             plan, store = preflight(
                 args.inventory, args.profile, parse_params(args.param), storage_override=args.storage_root,
-                allow_remote_simulation=args.allow_remote_simulation, repo_root=repo_root(),
+                allow_remote_simulation=args.allow_remote_simulation,
+                allow_hardware_receive=args.allow_hardware_receive,
+                allow_rf_transmit=args.allow_rf_transmit, repo_root=repo_root(),
             )
             assert store is not None and plan.run_dir is not None
-            start_run(plan, store, allow_remote_simulation=args.allow_remote_simulation)
+            start_run(plan, store, allow_remote_simulation=args.allow_remote_simulation,
+                      allow_hardware_receive=args.allow_hardware_receive,
+                      allow_rf_transmit=args.allow_rf_transmit)
             manifest = finalize_run(plan, store, repo_root=repo_root())
             result = run_dummy_inference(plan.run_dir)
             return {
@@ -168,7 +182,9 @@ def dispatch(args: argparse.Namespace) -> tuple[Any, int]:
     if args.command == "preflight":
         plan, store = preflight(
             args.inventory, args.profile, parse_params(args.param), storage_override=args.storage_root,
-            dry_run=args.dry_run, allow_remote_simulation=args.allow_remote_simulation, repo_root=repo_root(),
+            dry_run=args.dry_run, allow_remote_simulation=args.allow_remote_simulation,
+            allow_hardware_receive=args.allow_hardware_receive,
+            allow_rf_transmit=args.allow_rf_transmit, repo_root=repo_root(),
         )
         return ({"dry_run": True, **plan.sanitized} if store is None else {"run_id": plan.run_id, "state": store.load()["state"], "run_dir": str(plan.run_dir)}), 0
     if args.command == "inference":
@@ -177,9 +193,19 @@ def dispatch(args: argparse.Namespace) -> tuple[Any, int]:
         if args.inference_command == "run":
             return run_dummy_inference(target), 0
         return inference_status(target, args.inference_id), 0
-    plan, store = load_plan_for_run(args.inventory, args.run_id, storage_override=args.storage_root, enforce_capabilities=not getattr(args, "dry_run", False))
+    mutating_process_command = args.command in {"start", "stop", "recover"} and not getattr(args, "dry_run", False)
+    allowed = {"simulation"}
+    if getattr(args, "allow_remote_simulation", False): allowed.add("simulation")
+    if getattr(args, "allow_hardware_receive", False): allowed.add("dsp")
+    if getattr(args, "allow_rf_transmit", False): allowed.add("rf")
+    plan, store = load_plan_for_run(
+        args.inventory, args.run_id, storage_override=args.storage_root,
+        enforce_capabilities=mutating_process_command, allowed_safety_classes=allowed,
+    )
     if args.command == "start":
-        result = start_run(plan, store, dry_run=args.dry_run, allow_remote_simulation=args.allow_remote_simulation)
+        result = start_run(plan, store, dry_run=args.dry_run, allow_remote_simulation=args.allow_remote_simulation,
+                           allow_hardware_receive=args.allow_hardware_receive,
+                           allow_rf_transmit=args.allow_rf_transmit)
         if not args.dry_run and result.get("state") == "ABORTED":
             reason = result["history"][-1]["reason"] if result.get("history") else ""
             if reason == "signal_15":
@@ -190,11 +216,17 @@ def dispatch(args: argparse.Namespace) -> tuple[Any, int]:
     if args.command == "status":
         return status_run(plan, store), 0
     if args.command == "stop":
-        return stop_run(plan, store, reason=args.reason, wait_s=args.wait, dry_run=args.dry_run, allow_remote_simulation=args.allow_remote_simulation), 0
+        return stop_run(plan, store, reason=args.reason, wait_s=args.wait, dry_run=args.dry_run,
+                        allow_remote_simulation=args.allow_remote_simulation,
+                        allow_hardware_receive=args.allow_hardware_receive,
+                        allow_rf_transmit=args.allow_rf_transmit), 0
     if args.command == "finalize":
         return finalize_run(plan, store, repo_root=repo_root(), dry_run=args.dry_run), 0
     if args.command == "recover":
-        return recover_run(plan, store, repo_root=repo_root(), dry_run=args.dry_run, allow_remote_simulation=args.allow_remote_simulation), 0
+        return recover_run(plan, store, repo_root=repo_root(), dry_run=args.dry_run,
+                           allow_remote_simulation=args.allow_remote_simulation,
+                           allow_hardware_receive=args.allow_hardware_receive,
+                           allow_rf_transmit=args.allow_rf_transmit), 0
     raise ValidationFailure(f"Unsupported command: {args.command}")
 
 

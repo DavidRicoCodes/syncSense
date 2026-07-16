@@ -15,6 +15,7 @@ from .domain import ExecutionPlan, PublicationFailure, SCHEMA_VERSION, Validatio
 from .state import StateStore, utc_now
 from .storage import atomic_write_json
 from .validation import validate_document, validate_event_semantics, validate_relative_path
+from .wifi_smoke import validate_wifi_smoke_outputs
 
 
 def _artifact_record(producer_id: str, expected, path: Path) -> dict[str, Any]:
@@ -77,8 +78,11 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
     process_state = state["processes"][producer_id]
     if process_state.get("status") != "stopped" or process_state.get("exit_code") != 0:
         raise PublicationFailure(f"Producer did not stop successfully: {producer_id}")
-    if plan.profile.experiment_type == "distributed_dummy":
-        _validate_dummy_receipt(plan, producer_id)
+    if plan.profile.experiment_type in {"distributed_dummy", "wifi_link_smoke"}:
+        _validate_remote_receipt(plan, producer_id)
+    wifi_summary = None
+    if plan.profile.experiment_type == "wifi_link_smoke":
+        wifi_summary = validate_wifi_smoke_outputs(plan.run_dir, int(plan.parameters["num_beacons"]))
     records = []
     expected_by_id = {a.artifact_id: a for a in definition.expected_artifacts}
     for expected in definition.expected_artifacts:
@@ -89,6 +93,11 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
         record = _artifact_record(producer_id, expected, artifact_path)
         validate_document(record, "artifact")
         records.append(record)
+    if wifi_summary and producer_id == "rx_wifi":
+        for record in records:
+            if record["artifact_type"] == "wifi_csi_feature_rows":
+                record["row_count"] = wifi_summary["frames_received"]
+                validate_document(record, "artifact")
     event_count = 0
     by_clock: dict[str, Any] = {}
     assigned_clocks = {definition.clock_domain_id} if definition.clock_domain_id else set()
@@ -118,7 +127,7 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
     return manifest
 
 
-def _validate_dummy_receipt(plan: ExecutionPlan, producer_id: str) -> None:
+def _validate_remote_receipt(plan: ExecutionPlan, producer_id: str) -> None:
     resolved = plan.processes[producer_id]
     path = resolved.producer_dir / "producer-result.json"
     try:
@@ -132,9 +141,11 @@ def _validate_dummy_receipt(plan: ExecutionPlan, producer_id: str) -> None:
     if (
         receipt.get("run_id") != plan.run_id or receipt.get("producer_id") != producer_id
         or receipt.get("node_id") != resolved.definition.node_id or receipt.get("exit_code") != 0
-        or receipt.get("simulation") is not True or receipt.get("synthetic") is not True
     ):
         raise PublicationFailure(f"Producer receipt identity/result mismatch: {producer_id}")
+    expected_flags = plan.profile.experiment_type == "distributed_dummy"
+    if receipt.get("simulation") is not expected_flags or receipt.get("synthetic") is not expected_flags:
+        raise PublicationFailure(f"Producer receipt simulation classification mismatch: {producer_id}")
     declared = {item.get("path"): item for item in receipt.get("artifacts", []) if isinstance(item, dict)}
     expected = [a for a in resolved.definition.expected_artifacts if a.artifact_type != "producer_result"]
     if set(declared) != {a.path for a in expected}:
@@ -144,6 +155,10 @@ def _validate_dummy_receipt(plan: ExecutionPlan, producer_id: str) -> None:
         item = declared[artifact.path]
         if not artifact_path.is_file() or item.get("size_bytes") != artifact_path.stat().st_size or item.get("sha256") != sha256_file(artifact_path):
             raise PublicationFailure(f"Producer receipt checksum mismatch: {producer_id}/{artifact.path}")
+
+
+# Backwards-compatible internal name used by existing contract tests.
+_validate_dummy_receipt = _validate_remote_receipt
 
 
 def _git_revision(path: Path) -> dict[str, Any]:
@@ -230,6 +245,8 @@ def _publish_session_locked(plan: ExecutionPlan, store: StateStore, *, repo_root
             "roles": [{"producer_id": p.definition.producer_id, "node_id": p.definition.node_id, "role": p.definition.role, "modality": p.definition.modality} for p in plan.processes.values()],
             "clock_domains": list(plan.profile.clock_domains),
             "clock_relationships": list(plan.profile.clock_relationships),
+            "dataset_qualification": "integration_smoke" if plan.profile.experiment_type == "wifi_link_smoke" else "framework_validation",
+            "timestamp_semantics": "native_receiver_fields_unverified_no_canonical_events" if plan.profile.experiment_type == "wifi_link_smoke" else "profile_defined",
             "producers": producer_refs,
             "inference_runs": [],
         }

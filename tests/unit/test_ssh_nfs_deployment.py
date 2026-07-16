@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -46,6 +47,10 @@ def test_adapter_and_router_security_guards(tmp_path, monkeypatch):
         SshProcessAdapter().preflight(base)
     with pytest.raises(CapabilityDisabled):
         SshProcessAdapter(allow_remote_simulation=True).preflight(replace(base, safety_class="dsp"))
+    with pytest.raises(CapabilityDisabled, match="reception"):
+        SshProcessAdapter().preflight(replace(base, safety_class="dsp"))
+    with pytest.raises(CapabilityDisabled, match="transmission"):
+        SshProcessAdapter().preflight(replace(base, safety_class="rf"))
     with pytest.raises(ProcessFailure, match="Incomplete"):
         SshProcessAdapter(allow_remote_simulation=True).preflight(base)
     router = ProcessRouter()
@@ -88,6 +93,42 @@ def test_ssh_adapter_end_to_end_with_socketless_fake(tmp_path, monkeypatch):
     status = adapter.stop(handle, 3)
     assert not status.running and status.exit_code == 0
     assert (output / "producer-result.json").is_file()
+
+
+def test_real_worker_contract_with_harmless_child(tmp_path, monkeypatch):
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_ssh = fake_bin / "ssh"
+    fake_ssh.write_text(
+        "#!/usr/bin/env python3\nimport subprocess,sys\nraise SystemExit(subprocess.call(sys.argv[-1], shell=True))\n",
+        encoding="utf-8",
+    )
+    fake_ssh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}:{os.environ['PATH']}")
+    output = tmp_path / "shared" / "tx"
+    output.mkdir(parents=True)
+    config = {
+        "run_id": "run_fake", "producer_id": "tx_wifi", "node_id": "pc2",
+        "output_dir": str(output), "safety_class": "rf",
+        "worker_path": str(REPO_ROOT / "tools" / "remote_process_worker.py"),
+        "argv": [sys.executable, "-u", "-c", "print('child ready')"],
+        "cwd": str(tmp_path), "env": {}, "artifacts": ["process.log"],
+    }
+    spec = ProcessSpec(
+        "tx_wifi", tuple(config["argv"]), tmp_path, {}, tmp_path / "ssh-real.log", "rf",
+        transport="ssh", ssh={"host": "fake"}, worker_config=config,
+        remote_runtime_dir=output / "runtime", shared_runtime_dir=output / "runtime",
+    )
+    adapter = SshProcessAdapter(allow_rf_transmit=True)
+    handle = adapter.start(spec)
+    deadline = time.monotonic() + 5
+    while adapter.probe(handle).running and time.monotonic() < deadline:
+        time.sleep(0.02)
+    status = adapter.collect(handle)
+    assert status.exit_code == 0
+    receipt = json.loads((output / "producer-result.json").read_text())
+    assert receipt["simulation"] is False and receipt["synthetic"] is False
+    assert receipt["artifacts"][0]["path"] == "process.log"
 
 
 def test_deployment_verification_with_fake_ssh(monkeypatch):
