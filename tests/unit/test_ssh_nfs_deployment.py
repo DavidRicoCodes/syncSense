@@ -149,6 +149,7 @@ def test_nfs_fake_precheck_bootstrap_and_verify(tmp_path, monkeypatch):
     inventory = replace(inventory, storage_root=tmp_path / "server", client_mount=tmp_path / "client")
     inventory.storage_root.mkdir()
     inventory.client_mount.mkdir()
+    monkeypatch.setattr(nfs_module, "EXPORT_FILE", tmp_path / "managed.exports")
     endpoints = [NfsEndpoint("pc1", {"host": "pc1"}, "10.0.0.11", "10.0.0.5")]
     assert describe_nfs(inventory)["mutating"] is False
     monkeypatch.setattr("sync_framework.nfs._precheck", lambda inv: endpoints)

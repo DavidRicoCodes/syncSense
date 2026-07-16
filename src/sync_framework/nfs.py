@@ -146,7 +146,8 @@ def bootstrap_nfs(inventory: Inventory) -> dict[str, Any]:
     _run_local(["sudo", "-n", "install", "-d", "-o", "1000", "-g", "1000", "-m", "0750", str(inventory.storage_root)])
     assert inventory.client_mount
     for endpoint in endpoints:
-        run_ssh(endpoint.ssh, ["sudo", "-n", "install", "-d", "-o", "root", "-g", "root", "-m", "0755", str(inventory.client_mount)])
+        if _mount_info(endpoint, inventory.client_mount) is None:
+            run_ssh(endpoint.ssh, ["sudo", "-n", "install", "-d", "-o", "root", "-g", "root", "-m", "0755", str(inventory.client_mount)])
     _install_export(export)
     _run_local(["sudo", "-n", "exportfs", "-ra"])
     _run_local(["sudo", "-n", "systemctl", "enable", "--now", "nfs-kernel-server"])
