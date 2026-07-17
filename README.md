@@ -126,7 +126,7 @@ PC5 arranca `rx_5g` y `rx_wifi` en PC3PC4, espera readiness de ambos y solo desp
 
 - SSH real admite simulaciones con `--allow-remote-simulation`. El smoke 5G exige solo `--allow-hardware-receive`; el smoke WiFi exige además `--allow-rf-transmit`. NFS solo cambia mediante `--apply`.
 - El perfil distribuido produce datos y eventos marcados como sintéticos. No valida captura científica ni sincronización de adquisición.
-- La ejecución conjunta está implementada como `integration_smoke`; su validación RF live y el recorrido científico `nosync_passive` con timestamps canónicos siguen pendientes.
+- La ejecución conjunta está implementada y validada live como `integration_smoke`; el recorrido científico `nosync_passive` con timestamps canónicos sigue pendiente.
 - `sync_reception`, los restantes perfiles experimentales y la inferencia externa siguen pendientes.
 - `modulos_rx_tx` conserva su historial y contiene el receptor JSONL 5G incorporado en el commit fijado; `rx_sync` permanece intacto.
 - Cualquier ampliación no contenida en la descripción se propone primero y requiere validación expresa.

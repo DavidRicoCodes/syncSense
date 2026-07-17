@@ -2,7 +2,7 @@
 
 ## Propósito y alcance inmediato
 
-Este documento fija el orden de desarrollo y las decisiones confirmadas para el framework experimental del repositorio padre. El núcleo seguro, la infraestructura SSH/NFS, dos smokes hardware independientes y su smoke conjunto no sincronizado ya están implementados. Los timestamps científicos, la validación RF conjunta, los mecanismos de sincronización y el modelo externo siguen pendientes.
+Este documento fija el orden de desarrollo y las decisiones confirmadas para el framework experimental del repositorio padre. El núcleo seguro, la infraestructura SSH/NFS, dos smokes hardware independientes y su smoke conjunto no sincronizado ya están implementados y validados. Los timestamps científicos, los mecanismos de sincronización y el modelo externo siguen pendientes.
 
 ### Estado del primer incremento seguro
 
@@ -16,7 +16,7 @@ Completado y validado exclusivamente con simulación local:
 - Contrato batch del modelo externo, sin adaptador ejecutable ni inferencia.
 - Tests unitarios e integración con procesos locales y SSH falsos.
 
-Se añadió un segundo incremento de infraestructura con SSH y NFS reales para workers sintéticos. Después se integraron `wifi_link_smoke`, `ssb_rx_smoke` y `nosync_passive_hardware_smoke`. El último combina ambos RX y el TX WiFi bajo una frontera operacional, pero no equivale a un dataset científico temporal: siguen pendientes su validación RF live, timestamps canónicos de trama, `sync_reception` y el modelo entregado por el otro equipo.
+Se añadió un segundo incremento de infraestructura con SSH y NFS reales para workers sintéticos. Después se integraron `wifi_link_smoke`, `ssb_rx_smoke` y `nosync_passive_hardware_smoke`. El último combina ambos RX y el TX WiFi bajo una frontera operacional y ha sido validado live, pero no equivale a un dataset científico temporal: siguen pendientes timestamps canónicos de trama, `sync_reception` y el modelo entregado por el otro equipo.
 
 ### Incremento distribuido de infraestructura
 
@@ -137,6 +137,8 @@ Este recorrido también es `integration_smoke`. El script descarta `RXMetadata.t
 `nosync_passive_hardware_smoke` arranca en PC3PC4 los receptores 5G y WiFi sobre dos B210 diferentes, espera readiness de ambos y después ejecuta en PC2 el TX WiFi finito. Cuando TX finaliza, el supervisor drena WiFi y dispara en paralelo la parada de ambos RX, respetando siempre la frontera transmitter-first.
 
 La sesión reutiliza íntegramente las validaciones de ambos smokes, publica un único manifiesto y ejecuta una inferencia dummy sin fusión. Registra una ventana monotónica del supervisor PC5 únicamente para calcular duraciones operacionales y la tasa mínima 5G. Los dos dispositivos mantienen dominios `local_device_epoch` diferentes y una relación `not_comparable`; no se crean eventos canónicos ni se emparejan observaciones 5G/WiFi.
+
+La aceptación live se completó con 50 y 200 beacons. Las runs recibieron respectivamente 43/50 (86 %) y 184/200 (92 %) tramas WiFi; RX 5G obtuvo 255/255 y 567/576 grids válidos, por encima de 20 grids/s. Ambas sesiones terminaron `COMPLETE`, verificaron checksums y ejecutaron inferencia dummy `SUCCEEDED`.
 
 ### Perfiles activos iniciales
 

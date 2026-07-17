@@ -17,7 +17,7 @@ Este documento estructura los casos definidos en `ProjectDescription.md`. No con
 
 | Experimento | Fuente 5G | Fuente WiFi | Recepción | Sincronización prevista | Estado actual |
 |---|---|---|---|---|---|
-| `nosync_passive` | 5G comercial, SSB | PC2, beacons WiFi | PC3 + PC4 separados | Ninguna; combinación aproximada en PC5 | Smoke conjunto implementado con dos B210 no comparables; validación RF live y timestamps canónicos pendientes |
+| `nosync_passive` | 5G comercial, SSB | PC2, beacons WiFi | PC3 + PC4 separados | Ninguna; combinación aproximada en PC5 | Smoke conjunto validado live con dos B210 no comparables; timestamps canónicos pendientes |
 | `nosync_active` | PC1, BF-like 5G | PC2, BF WiFi | PC3 + PC4 separados | Ninguna; combinación aproximada en PC5 | Señales activas todavía en desarrollo |
 | `sync_reception_passive` | 5G comercial, SSB | PC2, beacons WiFi | Dos canales del X410 | Reloj de recepción común y timestamps de dispositivo | Captura X410 prototipo; integración y dataset conjunto pendientes |
 | `sync_reception_active` | PC1, BF-like 5G | PC2, BF WiFi | Dos canales del X410 | Reloj de recepción común y timestamps de dispositivo | Depende de RX X410 integrado y señales activas pendientes |
