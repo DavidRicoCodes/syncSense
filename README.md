@@ -94,7 +94,7 @@ PYTHONPATH=src python3 -m sync_framework.cli \
 
 PC5 arranca primero el RX, exige un `STATUS` de al menos 19 Msps y solo entonces arranca el TX. Tras finalizar el TX, detiene el RX después de 2 s sin crecimiento del JSONL o, como máximo, 10 s de drenaje. La publicación exige al menos `ceil(0.8 × num_beacons)`, 52 complejos por fila, cierre exacto JSONL/CF32, cero errores UHD y `Zero sends: 0`.
 
-El parámetro opcional `detector_threshold` conserva `0.85` como valor predeterminado y permite campañas controladas con otros umbrales. Cuando se ejecuta este smoke, el RX añade `frame-timings.jsonl` y `block-timings.jsonl` con latencias operacionales del host. Estas medidas incluyen incertidumbre de entrega USB/host y no son timestamps RF. Los launchers y el formato de resultados se documentan en [`docs/WIFI_THRESHOLD_CAMPAIGNS.md`](docs/WIFI_THRESHOLD_CAMPAIGNS.md).
+El parámetro opcional `detector_threshold` conserva `0.85` como valor predeterminado y permite campañas controladas con otros umbrales. Cuando se ejecuta este smoke, el RX añade `frame-timings.jsonl` y `block-timings.jsonl` con latencias operacionales del host. Estas medidas incluyen incertidumbre de entrega USB/host y no son timestamps RF. El runner parametrizable y el formato de resultados se documentan en [`docs/WIFI_THRESHOLD_CAMPAIGNS.md`](docs/WIFI_THRESHOLD_CAMPAIGNS.md).
 
 El smoke 5G pasivo usa `config/inventory.local.yaml`, donde el serial permanece ignorado:
 

@@ -2,12 +2,9 @@
 
 ## Scope
 
-The three launchers use the same validated `wifi_link_smoke` workflow and differ
-only in the detector threshold:
-
-- `tools/run_wifi_threshold_080.sh`: `detector_threshold=0.80`
-- `tools/run_wifi_threshold_085.sh`: `detector_threshold=0.85`
-- `tools/run_wifi_threshold_090.sh`: `detector_threshold=0.90`
+`tools/run_wifi_threshold_campaign.py` uses the validated `wifi_link_smoke`
+workflow and accepts the detector threshold through the required
+`--threshold` argument.
 
 Their default cadence reproduces the 2026-07-16 campaign:
 
@@ -18,7 +15,7 @@ Their default cadence reproduces the 2026-07-16 campaign:
 - 1 hour between cycles;
 - 120 runs in total.
 
-Each launcher accepts optional cadence arguments such as `--cycles`,
+The runner accepts optional cadence arguments such as `--cycles`,
 `--active-hours`, `--runs-per-hour`, `--num-beacons`, `--seed`, and
 `--cycle-gap-minutes`. Use `--dry-run` to print the complete plan without
 creating a campaign or touching hardware.
@@ -30,24 +27,24 @@ sessions so the campaign survives an SSH disconnection.
 
 ```bash
 tmux new-session -d -s wifi-thr085-night \
-  'cd /home/nextnet/sync && tools/run_wifi_threshold_085.sh'
+  'cd /home/nextnet/sync && python3 tools/run_wifi_threshold_campaign.py --threshold 0.85'
 ```
 
 After that session has finished:
 
 ```bash
 tmux new-session -d -s wifi-thr080 \
-  'cd /home/nextnet/sync && tools/run_wifi_threshold_080.sh'
+  'cd /home/nextnet/sync && python3 tools/run_wifi_threshold_campaign.py --threshold 0.80'
 ```
 
 After the second session has finished:
 
 ```bash
 tmux new-session -d -s wifi-thr090 \
-  'cd /home/nextnet/sync && tools/run_wifi_threshold_090.sh'
+  'cd /home/nextnet/sync && python3 tools/run_wifi_threshold_campaign.py --threshold 0.90'
 ```
 
-Do not run two launchers at once. A global file lock also rejects concurrent
+Do not run two campaigns at once. A global file lock also rejects concurrent
 WiFi hardware campaigns.
 
 Check progress with:
