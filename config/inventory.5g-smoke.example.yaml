@@ -1,0 +1,43 @@
+schema_version: 1.0.0
+inventory_id: pc5_5g_smoke_example
+storage:
+  backend: nfs
+  root: /srv/sync-experiments
+  client_mount: /mnt/sync-experiments
+nodes:
+  - node_id: pc3pc4
+    transport: ssh
+    workspace: /path/to/syncSense
+    ssh: {host: pc3pc4}
+    commands:
+      - command_id: ssb_online_rx
+        argv:
+          - "{workspace}/modulos_rx_tx/.venv_uhd/bin/python"
+          - -u
+          - "{workspace}/modulos_rx_tx/src/python/ssb_python/online_5g_rxgrid_jsonl.py"
+          - --serial
+          - REPLACE_IN_LOCAL_INVENTORY
+          - --freq
+          - "3541.44e6"
+          - --rate
+          - "15.36e6"
+          - --gain
+          - "60"
+          - --duration-ms
+          - "20"
+          - --channel
+          - "0"
+          - --force-nid2
+          - "0"
+          - --enable-cfo-correction
+          - --cfo-warmup-iters
+          - "30"
+          - --cfo-correction-sign
+          - "-1"
+          - --output-jsonl
+          - "{producer_dir}/rxgridssb.jsonl"
+          - --truncate-output
+          - --progress-every
+          - "1"
+        cwd: "{workspace}/modulos_rx_tx"
+        safety_class: dsp

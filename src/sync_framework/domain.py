@@ -103,6 +103,7 @@ class ProcessDefinition:
     timeouts: dict[str, float]
     expected_artifacts: tuple[ExpectedArtifact, ...]
     lifecycle: str = "continuous"
+    stop_signal: str = "terminate"
 
 
 @dataclass(frozen=True)

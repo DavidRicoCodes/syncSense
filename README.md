@@ -11,7 +11,7 @@ El repositorio contiene dos proyectos independientes como submódulos:
 - `modulos_rx_tx`: módulos de transmisión, recepción, captura, procesado e inferencia para 5G SSB y beacons WiFi con USRP.
 - `rx_sync`: prototipos de recepción simultánea multibanda con USRP X410 y pruebas iniciales de waveforms activas.
 
-El framework padre está implementado como paquete Python `sync-framework`, con CLI `syncctl`. Además del recorrido local `nosync_passive` y la prueba sintética `distributed_dummy`, incluye el perfil hardware acotado `wifi_link_smoke`: PC2 transmite un número finito de beacons y PC3PC4 recibe CSI WiFi online sobre NFS. Este smoke no genera eventos temporales canónicos ni constituye todavía `nosync_passive` completo.
+El framework padre está implementado como paquete Python `sync-framework`, con CLI `syncctl`. Además del recorrido local `nosync_passive` y la prueba sintética `distributed_dummy`, incluye dos perfiles hardware acotados: `wifi_link_smoke` para el enlace WiFi PC2→PC3PC4 y `ssb_rx_smoke` para recepción pasiva de SSB comerciales en PC3PC4. Ninguno genera eventos temporales canónicos ni constituye todavía `nosync_passive` completo.
 
 ## Roles de los equipos
 
@@ -94,13 +94,26 @@ PYTHONPATH=src python3 -m sync_framework.cli \
 
 PC5 arranca primero el RX, exige un `STATUS` de al menos 19 Msps y solo entonces arranca el TX. Tras finalizar el TX, detiene el RX después de 2 s sin crecimiento del JSONL o, como máximo, 10 s de drenaje. La publicación exige al menos `ceil(0.8 × num_beacons)`, 52 complejos por fila, cierre exacto JSONL/CF32, cero errores UHD y `Zero sends: 0`.
 
+El smoke 5G pasivo usa `config/inventory.local.yaml`, donde el serial permanece ignorado:
+
+```bash
+PYTHONPATH=src python3 -m sync_framework.cli \
+  --inventory config/inventory.local.yaml --format json \
+  experiment run profiles/ssb_rx_smoke.yaml \
+  --param label=ssb-smoke-10s --param duration_s=10 \
+  --param min_valid_ssb_rate_hz=10 \
+  --inference dummy --allow-hardware-receive
+```
+
+PC5 espera a que finalicen la configuración UHD y el warmup CFO (`=== Online loop ===`), mide `duration_s` desde ese momento y solicita una parada limpia mediante `SIGINT`. La publicación exige JSONL válido de grids `[240,4]`, cierre de estadísticas, ratio válido ≥80 %, al menos `ceil(duration_s × min_valid_ssb_rate_hz)` grids y ausencia de `UHD RX error`. `rx_timestamp_ns` es tiempo de serialización del host para operación: no es el timestamp de llegada del PSS.
+
 ## Límites de esta fase
 
-- SSH real admite simulaciones con `--allow-remote-simulation`; el smoke hardware exige simultáneamente `--allow-hardware-receive` y `--allow-rf-transmit`. NFS solo cambia mediante `--apply`.
+- SSH real admite simulaciones con `--allow-remote-simulation`. El smoke 5G exige solo `--allow-hardware-receive`; el smoke WiFi exige además `--allow-rf-transmit`. NFS solo cambia mediante `--apply`.
 - El perfil distribuido produce datos y eventos marcados como sintéticos. No valida captura científica ni sincronización de adquisición.
-- La única integración hardware del padre es el smoke WiFi acotado; RX 5G y el recorrido científico `nosync_passive` completo siguen pendientes.
+- Las integraciones hardware del padre son smokes independientes WiFi y RX 5G; su ejecución conjunta y el recorrido científico `nosync_passive` completo siguen pendientes.
 - `sync_reception`, los restantes perfiles experimentales y la inferencia externa siguen pendientes.
-- Los submódulos conservan su código e historial y no se han modificado.
+- `modulos_rx_tx` conserva su historial y contiene el receptor JSONL 5G incorporado en el commit fijado; `rx_sync` permanece intacto.
 - Cualquier ampliación no contenida en la descripción se propone primero y requiere validación expresa.
 
 ## Continuación del desarrollo

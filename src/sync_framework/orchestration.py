@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import signal
 import time
@@ -53,10 +54,11 @@ def make_process_spec(plan: ExecutionPlan, producer_id: str) -> ProcessSpec:
             "worker_path": str(resolved.node.workspace / "tools" / "remote_process_worker.py"),
             "argv": list(resolved.argv), "cwd": str(resolved.cwd), "env": resolved.env,
             "safety_class": resolved.command.safety_class,
+            "stop_signal": resolved.definition.stop_signal,
             "artifacts": [a.path for a in resolved.definition.expected_artifacts if a.artifact_type != "producer_result"],
         })
-        if producer_id == "rx_wifi":
-            worker_config["readiness_regex"] = r"STATUS \| rate=(?:19(?:\.[0-9]+)?|[2-9][0-9](?:\.[0-9]+)?) Msps"
+        if resolved.definition.readiness["type"] == "stdout_regex":
+            worker_config["readiness_regex"] = resolved.definition.readiness["pattern"]
     return ProcessSpec(
         producer_id=producer_id, argv=resolved.argv, cwd=resolved.cwd, env=resolved.env,
         log_path=(plan.run_dir or Path(".")) / ".control" / "logs" / f"{producer_id}.log",
@@ -94,6 +96,9 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
 
 
 def _hardware_preflight(plan: ExecutionPlan) -> None:
+    if plan.profile.experiment_type == "ssb_rx_smoke":
+        _ssb_hardware_preflight(plan)
+        return
     if plan.profile.experiment_type != "wifi_link_smoke":
         return
     tx = plan.processes["tx_wifi"]
@@ -118,6 +123,46 @@ def _hardware_preflight(plan: ExecutionPlan) -> None:
         found = run_ssh(resolved.node.ssh, ["uhd_find_devices", "--args", f"serial={serial}"], timeout=30)
         if serial not in found.stdout:
             raise ProcessFailure(f"Configured USRP was not discovered on {resolved.node.node_id}")
+
+
+def _ssb_hardware_preflight(plan: ExecutionPlan) -> None:
+    rx = plan.processes["rx_5g"]
+    if rx.node.transport != "ssh":
+        return
+    assert rx.node.ssh
+    interpreter = rx.argv[0]
+    script = next((value for value in rx.argv if value.endswith("/online_5g_rxgrid_jsonl.py")), None)
+    if script is None:
+        raise ProcessFailure("5G RX command does not identify online_5g_rxgrid_jsonl.py")
+    run_ssh(rx.node.ssh, ["test", "-x", interpreter], timeout=10)
+    run_ssh(rx.node.ssh, [interpreter, script, "--help"], timeout=30)
+    version_probe = (
+        "import json,numpy,scipy,h5py,matplotlib,uhd;"
+        "print(json.dumps({'python':__import__('sys').version.split()[0],"
+        "'numpy':numpy.__version__,'scipy':scipy.__version__,'h5py':h5py.__version__,"
+        "'matplotlib':matplotlib.__version__,'uhd':getattr(uhd,'__version__','unknown')}))"
+    )
+    versions = run_ssh(rx.node.ssh, [interpreter, "-c", version_probe], timeout=30)
+    try:
+        environment = json.loads(versions.stdout.strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError) as exc:
+        raise ProcessFailure("Cannot parse 5G RX dependency versions") from exc
+    environment.update(
+        {
+            "script_sha256": hashlib.sha256(
+                (Path(__file__).resolve().parents[2] / "modulos_rx_tx" / "src" / "python" / "ssb_python" / "online_5g_rxgrid_jsonl.py").read_bytes()
+            ).hexdigest(),
+            "warnings": versions.stderr.splitlines(),
+        }
+    )
+    atomic_write_json(plan.run_dir / ".control" / "ssb-environment.json", environment, mode=0o600)
+    try:
+        serial = next(rx.argv[index + 1] for index, value in enumerate(rx.argv[:-1]) if value == "--serial")
+    except StopIteration as exc:
+        raise ProcessFailure("5G RX serial is not configured") from exc
+    found = run_ssh(rx.node.ssh, ["uhd_find_devices", "--args", f"serial={serial}"], timeout=30)
+    if serial not in found.stdout:
+        raise ProcessFailure("Configured 5G RX USRP was not discovered on pc3pc4")
 
 
 def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_parameters: dict[str, str], *, storage_override: str | Path | None = None, dry_run: bool = False, allow_remote_simulation: bool = False, allow_hardware_receive: bool = False, allow_rf_transmit: bool = False, repo_root: Path | None = None) -> tuple[ExecutionPlan, StateStore | None]:
@@ -213,6 +258,12 @@ def _is_ready(plan: ExecutionPlan, producer_id: str, adapter: Any, handle: Proce
     readiness = plan.processes[producer_id].definition.readiness
     if readiness["type"] == "process_running":
         return time.monotonic() - started_monotonic >= float(readiness["grace_s"])
+    if readiness["type"] == "stdout_regex":
+        path = plan.processes[producer_id].producer_dir / "runtime" / "status.json"
+        try:
+            return json.loads(path.read_text(encoding="utf-8")).get("status") == "ready"
+        except (OSError, json.JSONDecodeError):
+            return False
     path = plan.processes[producer_id].producer_dir / readiness["path"]
     try:
         value = json.loads(path.read_text(encoding="utf-8"))

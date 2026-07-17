@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:5g-ssb-rxgrid-row",
+  "title": "FiveGSsbRxGridRowV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version", "schema", "waveform_type", "profile_id", "iteration",
+    "valid", "error", "rx_timestamp_ns", "timestamp_unix", "timestamp_utc",
+    "timestamp_semantics", "usrp", "center_frequency_hz", "sample_rate_hz",
+    "cfo_hz", "cfo_correction_enabled", "feature_name", "feature_dtype",
+    "feature_shape", "feature_flatten_order", "feature_count",
+    "complex_features", "numeric_metadata"
+  ],
+  "$defs": {
+    "finite_number": {"type": "number"},
+    "complex": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["real", "imag"],
+      "properties": {
+        "real": {"$ref": "#/$defs/finite_number"},
+        "imag": {"$ref": "#/$defs/finite_number"}
+      }
+    }
+  },
+  "properties": {
+    "protocol_version": {"const": 1},
+    "schema": {"const": "5g_ssb_rxgrid_jsonl_v1"},
+    "waveform_type": {"const": "5g_ssb"},
+    "profile_id": {"const": "n78_ssb_30khz"},
+    "iteration": {"type": "integer", "minimum": 0},
+    "valid": {"const": true},
+    "error": {"const": ""},
+    "rx_timestamp_ns": {"type": "integer", "minimum": 0},
+    "timestamp_unix": {"$ref": "#/$defs/finite_number"},
+    "timestamp_utc": {"type": "string", "format": "date-time"},
+    "timestamp_semantics": {"const": "host_serialization_time_operational_only"},
+    "usrp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serial", "channel", "gain_db"],
+      "properties": {
+        "serial": {"type": "string", "minLength": 1},
+        "channel": {"type": "integer", "minimum": 0},
+        "gain_db": {"$ref": "#/$defs/finite_number"}
+      }
+    },
+    "center_frequency_hz": {"$ref": "#/$defs/finite_number"},
+    "sample_rate_hz": {"$ref": "#/$defs/finite_number"},
+    "cfo_hz": {"$ref": "#/$defs/finite_number"},
+    "cfo_correction_enabled": {"type": "boolean"},
+    "feature_name": {"const": "rxGridSSB"},
+    "feature_dtype": {"const": "complex64"},
+    "feature_shape": {"const": [240, 4]},
+    "feature_flatten_order": {"const": "C"},
+    "feature_count": {"const": 960},
+    "complex_features": {
+      "type": "array",
+      "minItems": 960,
+      "maxItems": 960,
+      "items": {"$ref": "#/$defs/complex"}
+    },
+    "numeric_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nid2", "pss_metric", "timing_offset_samples", "timing_offset_ms",
+        "n_symbols_extracted", "rxgrid_mean_abs", "rxgrid_median_abs",
+        "rxgrid_std_abs", "rxgrid_max_abs", "rxgrid_mean_power_db",
+        "capture_time_ms", "pss_time_ms", "ofdm_time_ms", "dsp_time_ms",
+        "loop_time_ms"
+      ],
+      "properties": {
+        "nid2": {"type": "integer", "enum": [0, 1, 2]},
+        "pss_metric": {"$ref": "#/$defs/finite_number"},
+        "timing_offset_samples": {"type": "integer"},
+        "timing_offset_ms": {"$ref": "#/$defs/finite_number"},
+        "n_symbols_extracted": {"type": "integer", "minimum": 0},
+        "rxgrid_mean_abs": {"$ref": "#/$defs/finite_number"},
+        "rxgrid_median_abs": {"$ref": "#/$defs/finite_number"},
+        "rxgrid_std_abs": {"$ref": "#/$defs/finite_number"},
+        "rxgrid_max_abs": {"$ref": "#/$defs/finite_number"},
+        "rxgrid_mean_power_db": {"$ref": "#/$defs/finite_number"},
+        "capture_time_ms": {"$ref": "#/$defs/finite_number"},
+        "pss_time_ms": {"$ref": "#/$defs/finite_number"},
+        "ofdm_time_ms": {"$ref": "#/$defs/finite_number"},
+        "dsp_time_ms": {"$ref": "#/$defs/finite_number"},
+        "loop_time_ms": {"$ref": "#/$defs/finite_number"}
+      }
+    }
+  }
+}

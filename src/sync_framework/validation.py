@@ -24,6 +24,7 @@ SCHEMA_FILES = {
     "run-state": "run-state.schema.json",
     "batch-model-request": "batch-model-request.schema.json",
     "batch-model-result": "batch-model-result.schema.json",
+    "5g-ssb-rxgrid-row": "5g-ssb-rxgrid-row.schema.json",
 }
 
 

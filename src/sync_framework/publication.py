@@ -16,6 +16,7 @@ from .state import StateStore, utc_now
 from .storage import atomic_write_json
 from .validation import validate_document, validate_event_semantics, validate_relative_path
 from .wifi_smoke import validate_wifi_smoke_outputs
+from .ssb_smoke import SSB_ROW_SCHEMA_REF, validate_ssb_smoke_outputs
 
 
 def _artifact_record(producer_id: str, expected, path: Path) -> dict[str, Any]:
@@ -78,11 +79,18 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
     process_state = state["processes"][producer_id]
     if process_state.get("status") != "stopped" or process_state.get("exit_code") != 0:
         raise PublicationFailure(f"Producer did not stop successfully: {producer_id}")
-    if plan.profile.experiment_type in {"distributed_dummy", "wifi_link_smoke"}:
+    if plan.profile.experiment_type in {"distributed_dummy", "wifi_link_smoke", "ssb_rx_smoke"}:
         _validate_remote_receipt(plan, producer_id)
     wifi_summary = None
+    ssb_summary = None
     if plan.profile.experiment_type == "wifi_link_smoke":
         wifi_summary = validate_wifi_smoke_outputs(plan.run_dir, int(plan.parameters["num_beacons"]))
+    elif plan.profile.experiment_type == "ssb_rx_smoke":
+        ssb_summary = validate_ssb_smoke_outputs(
+            plan.run_dir,
+            float(plan.parameters["duration_s"]),
+            float(plan.parameters["min_valid_ssb_rate_hz"]),
+        )
     records = []
     expected_by_id = {a.artifact_id: a for a in definition.expected_artifacts}
     for expected in definition.expected_artifacts:
@@ -97,6 +105,12 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
         for record in records:
             if record["artifact_type"] == "wifi_csi_feature_rows":
                 record["row_count"] = wifi_summary["frames_received"]
+                validate_document(record, "artifact")
+    if ssb_summary and producer_id == "rx_5g":
+        for record in records:
+            if record["artifact_type"] == "5g_ssb_rxgrid_rows":
+                record["row_count"] = ssb_summary["valid_grids"]
+                record["schema_ref"] = SSB_ROW_SCHEMA_REF
                 validate_document(record, "artifact")
     event_count = 0
     by_clock: dict[str, Any] = {}
@@ -245,8 +259,14 @@ def _publish_session_locked(plan: ExecutionPlan, store: StateStore, *, repo_root
             "roles": [{"producer_id": p.definition.producer_id, "node_id": p.definition.node_id, "role": p.definition.role, "modality": p.definition.modality} for p in plan.processes.values()],
             "clock_domains": list(plan.profile.clock_domains),
             "clock_relationships": list(plan.profile.clock_relationships),
-            "dataset_qualification": "integration_smoke" if plan.profile.experiment_type == "wifi_link_smoke" else "framework_validation",
-            "timestamp_semantics": "native_receiver_fields_unverified_no_canonical_events" if plan.profile.experiment_type == "wifi_link_smoke" else "profile_defined",
+            "dataset_qualification": "integration_smoke" if plan.profile.experiment_type in {"wifi_link_smoke", "ssb_rx_smoke"} else "framework_validation",
+            "timestamp_semantics": (
+                "native_receiver_fields_unverified_no_canonical_events"
+                if plan.profile.experiment_type == "wifi_link_smoke"
+                else "host_serialization_time_operational_only_no_canonical_events"
+                if plan.profile.experiment_type == "ssb_rx_smoke"
+                else "profile_defined"
+            ),
             "producers": producer_refs,
             "inference_runs": [],
         }

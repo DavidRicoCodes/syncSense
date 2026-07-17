@@ -15,6 +15,7 @@ from .publication import verify_published_manifest
 from .state import utc_now
 from .storage import atomic_write_json
 from .validation import validate_document
+from .ssb_smoke import validate_ssb_smoke_outputs
 
 
 def generate_inference_id() -> str:
@@ -63,6 +64,21 @@ class DummyBatchModelAdapter:
                 "frames_received": received,
                 "frames_lost": requested - received,
                 "receive_ratio": received / requested,
+                "input_data": "real_hardware_integration_smoke",
+            }
+        elif manifest["profile"]["profile_id"] == "ssb_rx_smoke":
+            ssb = validate_ssb_smoke_outputs(
+                run_dir,
+                float(manifest["parameters"]["duration_s"]),
+                float(manifest["parameters"]["min_valid_ssb_rate_hz"]),
+            )
+            summary["ssb_rx_smoke"] = {
+                "duration_s": ssb["duration_s"],
+                "iterations": ssb["iterations"],
+                "valid_grids": ssb["valid_grids"],
+                "invalid_grids": ssb["invalid_grids"],
+                "valid_ratio": ssb["valid_ratio"],
+                "valid_rate_hz": ssb["valid_rate_hz"],
                 "input_data": "real_hardware_integration_smoke",
             }
         summary_path = output_dir / "summary.json"

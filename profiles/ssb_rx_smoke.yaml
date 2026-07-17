@@ -1,0 +1,39 @@
+schema_version: 1.0.0
+profile_id: ssb_rx_smoke
+profile_version: 1.0.0
+experiment_type: ssb_rx_smoke
+description: Passive 5G commercial SSB receiver integration smoke; host timestamps are operational only.
+parameters:
+  label: {type: string, required: true}
+  duration_s: {type: number, required: true, minimum: 1, maximum: 3600}
+  min_valid_ssb_rate_hz: {type: number, required: false, default: 10, minimum: 0.1, maximum: 100}
+clock_domains:
+  - clock_domain_id: pc3pc4_5g_acquisition
+    owner_node_id: pc3pc4
+    kind: acquisition
+    epoch: local_device_epoch
+    comparability_group: ssb_smoke_only
+clock_relationships: []
+processes:
+  - producer_id: rx_5g
+    node_id: pc3pc4
+    role: receiver
+    modality: 5g
+    command_ref: ssb_online_rx
+    lifecycle: continuous
+    stop_signal: interrupt
+    clock_domain_id: pc3pc4_5g_acquisition
+    readiness: {type: stdout_regex, pattern: "^=== Online loop ===$"}
+    timeouts: {readiness_s: 60, stop_grace_s: 10, kill_s: 2}
+    expected_artifacts:
+      - {artifact_id: rx_5g_grids, artifact_type: 5g_ssb_rxgrid_rows, media_type: application/x-ndjson, path: rxgridssb.jsonl, required: true}
+      - {artifact_id: rx_5g_log, artifact_type: process_log, media_type: text/plain, path: process.log, required: true}
+      - {artifact_id: rx_5g_receipt, artifact_type: producer_result, media_type: application/json, path: producer-result.json, required: true}
+orchestration:
+  start_groups:
+    - [rx_5g]
+  stop_groups:
+    - [rx_5g]
+  monitor_interval_s: 0.25
+  heartbeat_interval_s: 1.0
+  supervisor_stale_s: 5.0

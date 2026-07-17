@@ -103,6 +103,7 @@ def load_profile(path: str | Path) -> ExperimentProfile:
             command_ref=item["command_ref"], clock_domain_id=item.get("clock_domain_id"), readiness=dict(item["readiness"]),
             timeouts={k: float(v) for k, v in item["timeouts"].items()}, expected_artifacts=artifacts,
             lifecycle=item.get("lifecycle", "continuous"),
+            stop_signal=item.get("stop_signal", "terminate"),
         )
     orchestration = raw["orchestration"]
     return ExperimentProfile(

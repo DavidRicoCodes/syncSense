@@ -2,7 +2,7 @@
 
 ## Propósito y alcance inmediato
 
-Este documento fija el orden de desarrollo y las decisiones confirmadas para el framework experimental del repositorio padre. El primer incremento seguro del núcleo ya está implementado: paquete Python, schemas v1, perfil `nosync_passive`, máquina de estados, ejecución local simulada, publicación y recuperación. Todavía no existen infraestructura NFS, SSH real, integración DSP, control hardware ni mecanismos de sincronización.
+Este documento fija el orden de desarrollo y las decisiones confirmadas para el framework experimental del repositorio padre. El núcleo seguro, la infraestructura SSH/NFS y dos smokes hardware independientes ya están implementados. Los mecanismos científicos de sincronización, el perfil conjunto `nosync_passive` real y el modelo externo siguen pendientes.
 
 ### Estado del primer incremento seguro
 
@@ -16,7 +16,7 @@ Completado y validado exclusivamente con simulación local:
 - Contrato batch del modelo externo, sin adaptador ejecutable ni inferencia.
 - Tests unitarios e integración con procesos locales y SSH falsos.
 
-Se ha añadido un segundo incremento de infraestructura con SSH y NFS reales, pero solo para workers y datos sintéticos. Incluye el perfil `distributed_dummy`, verificación de clones Git, receipts por productor e inferencia dummy en PC5. Esto valida el camino de control y publicación, no equivale a captura científica ni a la primera aceptación hardware. Siguen pendientes scripts DSP reales, UHD/USRP/RF, `sync_reception` y el modelo entregado por el otro equipo.
+Se añadió un segundo incremento de infraestructura con SSH y NFS reales para workers sintéticos. Después se integró `wifi_link_smoke` y, de forma independiente, `ssb_rx_smoke`. Estos recorridos validan hardware y publicación por banda, pero no equivalen a un dataset científico conjunto. Siguen pendientes la ejecución combinada, timestamps canónicos de trama, `sync_reception` y el modelo entregado por el otro equipo.
 
 ### Incremento distribuido de infraestructura
 
@@ -123,6 +123,12 @@ El dataset resultante mantendrá dos dominios de reloj explícitamente independi
 Antes de incorporar RX 5G se valida el enlace PC2 → PC3PC4 → NFS → PC5 mediante `wifi_link_smoke`. El usuario elige entre 1 y 600 beacons; PC5 arranca el RX WiFi, espera una tasa observada de al menos 19 Msps, lanza el TX finito y drena el receptor hasta 2 s de silencio o 10 s como máximo. La publicación requiere al menos el 80 % de contadores, cierre JSONL/CF32 y ausencia de errores UHD/TX.
 
 Este recorrido se clasifica expresamente como `integration_smoke`: conserva los timestamps nativos del receptor solo como campos no verificados, no crea eventos temporales canónicos y no afirma alineación 5G/WiFi. La inferencia posterior sigue siendo dummy y solo resume solicitados, recibidos, perdidos y ratio.
+
+#### Incremento de integración RX 5G pasivo
+
+`ssb_rx_smoke` inicia en PC3PC4 el receptor continuo `online_5g_rxgrid_jsonl.py`, espera a `=== Online loop ===` después de la configuración UHD y el warmup CFO, captura durante `duration_s` y solicita parada mediante `SIGINT`. Publica `rxGridSSB` JSONL solo si el cierre del log es coherente, el ratio válido es ≥80 %, se alcanza la tasa mínima configurada y no existen errores UHD.
+
+Este recorrido también es `integration_smoke`. El script descarta `RXMetadata.time_spec`; sus campos `rx_timestamp_ns`, `timestamp_unix` y `timestamp_utc` describen únicamente tiempo operacional de serialización del host. Por ello no se crea `events.jsonl`, no se afirma el comienzo exacto PSS y no existe comparabilidad temporal con WiFi. La inferencia dummy resume duración, iteraciones, grids válidos/inválidos, ratio y tasa.
 
 ### Perfiles activos iniciales
 

@@ -13,7 +13,7 @@
     "schema_version": {"const": "1.0.0"},
     "profile_id": {"$ref": "#/$defs/id"},
     "profile_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-    "experiment_type": {"enum": ["nosync_passive", "distributed_dummy", "wifi_link_smoke"]},
+    "experiment_type": {"enum": ["nosync_passive", "distributed_dummy", "wifi_link_smoke", "ssb_rx_smoke"]},
     "description": {"type": "string"},
     "parameters": {
       "type": "object",
@@ -75,6 +75,7 @@
           "command_ref": {"$ref": "#/$defs/id"},
           "clock_domain_id": {"$ref": "#/$defs/id"},
           "lifecycle": {"enum": ["continuous", "finite"], "default": "continuous"},
+          "stop_signal": {"enum": ["terminate", "interrupt"], "default": "terminate"},
           "readiness": {
             "oneOf": [
               {
@@ -86,6 +87,11 @@
                 "type": "object", "additionalProperties": false,
                 "required": ["type", "path", "json_pointer", "equals"],
                 "properties": {"type": {"const": "json_file"}, "path": {"$ref": "#/$defs/path"}, "json_pointer": {"type": "string", "pattern": "^/"}, "equals": {}}
+              },
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["type", "pattern"],
+                "properties": {"type": {"const": "stdout_regex"}, "pattern": {"type": "string", "minLength": 1}}
               }
             ]
           },

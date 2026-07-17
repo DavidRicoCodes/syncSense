@@ -10,9 +10,9 @@ SYNC/
 ├── constraints/               # Versiones verificadas para PC5 aarch64
 ├── src/sync_framework/         # Dominio, planificación, estado y orquestación
 ├── schemas/v1/                # Contratos JSON Schema versionados
-├── profiles/                  # nosync_passive y prueba distributed_dummy
+├── profiles/                  # Perfiles simulados y smokes hardware acotados
 ├── config/                    # Inventarios de ejemplo; el real se ignora
-├── tools/                     # Worker remoto dummy autónomo Python 3.10+
+├── tools/                     # Workers remotos autónomos Python 3.10+
 ├── tests/                     # Unitarios e integración sin hardware ni red
 ├── ProjectDescription.md       # Fuente autoritativa del proyecto
 ├── README.md                   # Entrada y resumen del repositorio padre
@@ -20,22 +20,23 @@ SYNC/
 │   ├── REPOSITORY_MAP.md       # Este mapa
 │   ├── EXPERIMENT_MATRIX.md    # Casos experimentales y disponibilidad
 │   └── DEVELOPMENT_PLAN.md     # Arquitectura aprobada y roadmap
-├── modulos_rx_tx/              # Submódulo 5G/WiFi RX-TX y sensing, intacto
+├── modulos_rx_tx/              # Submódulo 5G/WiFi RX-TX y sensing
 └── rx_sync/                    # Submódulo de pruebas multibanda X410
 ```
 
-El paquete padre implementa validación de contratos, procesos locales y SSH `simulation`, estado atómico, supervisión foreground, NFSv4 explícito, publicación, recuperación e inferencia dummy. La integración DSP/hardware permanece deshabilitada. El worker distribuido vive en `tools/remote_dummy_worker.py` para ejecutarse directamente desde clones Git sin instalar el paquete en los clientes.
+El paquete padre implementa validación de contratos, procesos locales, SSH con capacidades explícitas, estado atómico, supervisión foreground, NFSv4 explícito, publicación, recuperación e inferencia dummy. `wifi_link_smoke` y `ssb_rx_smoke` habilitan DSP/hardware solo con sus flags de autorización; las pruebas automáticas siguen usando dobles. Los workers distribuidos viven en `tools/` y se ejecutan desde clones Git sin instalar el paquete en los clientes.
 
 Los archivos locales `AGENTS.md` y `.codex/*` existen para mantener continuidad durante el desarrollo, pero están ignorados deliberadamente y no forman parte del producto versionado. `.codex/HANDOFF.md` es el punto de entrada para trasladar el workspace a PC5 y retomarlo sin el chat original.
 
 ## Submódulo `modulos_rx_tx`
 
 - Origen: `https://github.com/ammendezuc3m/DT_sensing_fusion_WIFI5G.git`
-- Revisión fijada inicialmente: `68daca188e308b65b3cfdf2680532062306c49c5`
+- Revisión fijada actual: `2a7b48b307f1e9a2e310374af01b27aca0669212`
 
 Capacidades observadas:
 
 - Recepción de SSB 5G comercial con USRP B210 y extracción `dataSSB`/`rxGridSSB`.
+- Receptor continuo `online_5g_rxgrid_jsonl.py`, con serial obligatorio y filas `rxGridSSB` JSONL cuyo timestamp se clasifica como tiempo operacional de serialización del host.
 - Captura de datasets, entrenamiento e inferencia para sensing 5G.
 - Generación y transmisión de beacons 802.11a/g mediante USRP.
 - Recepción WiFi, seguimiento L-LTF y extracción de CSI.
@@ -68,6 +69,6 @@ Limitaciones relevantes:
 ## Fronteras de responsabilidad
 
 - Cada submódulo mantiene su propio historial, dependencias, documentación y política de datos generados.
-- El repositorio padre coordina por ahora productores simulados sin copiar ni absorber la lógica DSP de los hijos.
+- El repositorio padre coordina productores simulados y dos smokes hardware independientes sin copiar ni absorber la lógica DSP de los hijos.
 - Cambiar una interfaz o script de un submódulo requiere una necesidad concreta y aprobación previa.
 - Datasets, capturas, estados de ejecución, credenciales y contexto de agentes no se versionan en el padre.

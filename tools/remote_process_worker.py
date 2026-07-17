@@ -61,6 +61,8 @@ def decode_spec(encoded: str) -> dict:
         raise ValueError("invalid worker specification")
     if value.get("safety_class") not in {"dsp", "rf"}:
         raise ValueError("real worker only accepts dsp or rf safety classes")
+    if value.get("stop_signal", "terminate") not in {"terminate", "interrupt"}:
+        raise ValueError("invalid stop signal")
     return value
 
 
@@ -82,7 +84,8 @@ def run_worker(encoded: str) -> int:
         stopping = True
         if child and child.poll() is None:
             try:
-                os.killpg(child.pid, signal.SIGTERM)
+                child_signal = signal.SIGINT if spec.get("stop_signal") == "interrupt" else signal.SIGTERM
+                os.killpg(child.pid, child_signal)
             except ProcessLookupError:
                 pass
 

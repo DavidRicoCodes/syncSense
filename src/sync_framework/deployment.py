@@ -72,5 +72,13 @@ def verify_remote_workspaces(plan: ExecutionPlan, *, repo_root: Path) -> list[di
             expected_submodule = _local_git(repo_root / "modulos_rx_tx", "rev-parse", "HEAD")
             if submodule_head != expected_submodule:
                 raise ProcessFailure(f"modulos_rx_tx commit differs on {node_id}: {submodule_head}")
+        if plan.profile.experiment_type == "ssb_rx_smoke":
+            relative_script = Path("modulos_rx_tx/src/python/ssb_python/online_5g_rxgrid_jsonl.py")
+            local_script_digest = _sha256(repo_root / relative_script)
+            remote_script_digest = run_ssh(
+                node.ssh, ["sha256sum", str(node.workspace / relative_script)]
+            ).stdout.split()[0]
+            if remote_script_digest != local_script_digest:
+                raise ProcessFailure(f"5G RX script digest differs from PC5: {node_id}")
         checked.append({"node_id": node_id, "branch": branch, "head": head, "worker_sha256": remote_digest, "python": version_text, "modulos_rx_tx": submodule_head})
     return checked
