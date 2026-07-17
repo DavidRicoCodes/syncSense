@@ -40,4 +40,6 @@ nodes:
           - --progress-every
           - "1"
         cwd: "{workspace}/modulos_rx_tx"
+        env:
+          PYTHONPATH: /usr/local/lib/python3.10/site-packages
         safety_class: dsp

@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import IO, Any
 
@@ -38,15 +39,44 @@ def ssh_prefix(config: dict[str, Any]) -> list[str]:
     return command + [ssh_target(config), "--"]
 
 
-def remote_command(config: dict[str, Any], argv: list[str]) -> list[str]:
+def _remote_process_argv(
+    argv: list[str],
+    *,
+    cwd: str | Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> list[str]:
+    if cwd is None and not env:
+        return argv
+    contextual = ["/usr/bin/env"]
+    if cwd is not None:
+        contextual.append(f"--chdir={cwd}")
+    contextual.extend(f"{key}={value}" for key, value in sorted((env or {}).items()))
+    return contextual + argv
+
+
+def remote_command(
+    config: dict[str, Any],
+    argv: list[str],
+    *,
+    cwd: str | Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> list[str]:
     # OpenSSH invokes a remote shell. shlex.join preserves argv boundaries and
     # the caller only supplies validated configuration/worker values.
-    return ssh_prefix(config) + [shlex.join(argv)]
+    return ssh_prefix(config) + [shlex.join(_remote_process_argv(argv, cwd=cwd, env=env))]
 
 
-def run_ssh(config: dict[str, Any], argv: list[str], *, timeout: float = 15.0, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run_ssh(
+    config: dict[str, Any],
+    argv: list[str],
+    *,
+    timeout: float = 15.0,
+    check: bool = True,
+    cwd: str | Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
-        remote_command(config, argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        remote_command(config, argv, cwd=cwd, env=env), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True, timeout=timeout, check=False,
     )
     if check and result.returncode != 0:

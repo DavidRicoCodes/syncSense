@@ -128,7 +128,7 @@ El threshold del detector es un parámetro reproducible del perfil, con `0.85` c
 
 #### Incremento de integración RX 5G pasivo
 
-`ssb_rx_smoke` inicia en PC3PC4 el receptor continuo `online_5g_rxgrid_jsonl.py`, espera a `=== Online loop ===` después de la configuración UHD y el warmup CFO, captura durante `duration_s` y solicita parada mediante `SIGINT`. Publica `rxGridSSB` JSONL solo si el cierre del log es coherente, el ratio válido es ≥80 %, se alcanza la tasa mínima configurada y no existen errores UHD.
+`ssb_rx_smoke` inicia en PC3PC4 el receptor continuo `online_5g_rxgrid_jsonl.py`, espera a `=== Online loop ===` después de la configuración UHD y el warmup CFO, captura durante `duration_s` y solicita parada mediante `SIGINT`. El preflight y el worker ejecutan el intérprete con el mismo `cwd` y entorno literal declarados en el inventario, sin cargar `.bashrc`; además verifican que el módulo UHD expone realmente `usrp.MultiUSRP`. Publica `rxGridSSB` JSONL solo si el cierre del log es coherente, el ratio válido es ≥80 %, se alcanza la tasa mínima configurada y no existen errores UHD.
 
 Este recorrido también es `integration_smoke`. El script descarta `RXMetadata.time_spec`; sus campos `rx_timestamp_ns`, `timestamp_unix` y `timestamp_utc` describen únicamente tiempo operacional de serialización del host. Por ello no se crea `events.jsonl`, no se afirma el comienzo exacto PSS y no existe comparabilidad temporal con WiFi. La inferencia dummy resume duración, iteraciones, grids válidos/inválidos, ratio y tasa.
 

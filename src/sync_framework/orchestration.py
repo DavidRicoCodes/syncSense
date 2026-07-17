@@ -138,24 +138,50 @@ def _ssb_hardware_preflight(plan: ExecutionPlan) -> None:
     if script is None:
         raise ProcessFailure("5G RX command does not identify online_5g_rxgrid_jsonl.py")
     run_ssh(rx.node.ssh, ["test", "-x", interpreter], timeout=10)
-    run_ssh(rx.node.ssh, [interpreter, script, "--help"], timeout=30)
-    version_probe = (
-        "import json,numpy,scipy,h5py,matplotlib,uhd;"
-        "print(json.dumps({'python':__import__('sys').version.split()[0],"
-        "'numpy':numpy.__version__,'scipy':scipy.__version__,'h5py':h5py.__version__,"
-        "'matplotlib':matplotlib.__version__,'uhd':getattr(uhd,'__version__','unknown')}))"
+    help_result = run_ssh(
+        rx.node.ssh,
+        [interpreter, script, "--help"],
+        timeout=30,
+        cwd=rx.cwd,
+        env=rx.env,
     )
-    versions = run_ssh(rx.node.ssh, [interpreter, "-c", version_probe], timeout=30)
+    version_probe = (
+        "import json,numpy,scipy,h5py,matplotlib,sys,uhd;"
+        "print(json.dumps({'python':sys.version.split()[0],'python_executable':sys.executable,"
+        "'numpy':numpy.__version__,'scipy':scipy.__version__,'h5py':h5py.__version__,"
+        "'matplotlib':matplotlib.__version__,'uhd':getattr(uhd,'__version__','unknown'),"
+        "'uhd_module_path':getattr(uhd,'__file__',None),"
+        "'uhd_has_multi_usrp':hasattr(getattr(uhd,'usrp',None),'MultiUSRP')}))"
+    )
+    versions = run_ssh(
+        rx.node.ssh,
+        [interpreter, "-c", version_probe],
+        timeout=30,
+        cwd=rx.cwd,
+        env=rx.env,
+    )
     try:
         environment = json.loads(versions.stdout.strip().splitlines()[-1])
     except (json.JSONDecodeError, IndexError) as exc:
         raise ProcessFailure("Cannot parse 5G RX dependency versions") from exc
+    if not environment.get("uhd_module_path") or environment.get("uhd_has_multi_usrp") is not True:
+        raise ProcessFailure("5G RX UHD Python binding is not a functional module with usrp.MultiUSRP")
+    warnings = list(
+        dict.fromkeys(
+            [
+                *help_result.stderr.splitlines(),
+                *versions.stderr.splitlines(),
+            ]
+        )
+    )
     environment.update(
         {
+            "cwd": str(rx.cwd),
+            "environment_keys": sorted(rx.env),
             "script_sha256": hashlib.sha256(
                 (Path(__file__).resolve().parents[2] / "modulos_rx_tx" / "src" / "python" / "ssb_python" / "online_5g_rxgrid_jsonl.py").read_bytes()
             ).hexdigest(),
-            "warnings": versions.stderr.splitlines(),
+            "warnings": warnings,
         }
     )
     atomic_write_json(plan.run_dir / ".control" / "ssb-environment.json", environment, mode=0o600)

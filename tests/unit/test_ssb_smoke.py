@@ -175,10 +175,14 @@ def test_ssb_process_spec_and_preflight_are_simulable(tmp_path, monkeypatch):
     spec = make_process_spec(plan, "rx_5g")
     assert spec.worker_config["stop_signal"] == "interrupt"
     assert spec.worker_config["readiness_regex"] == "^=== Online loop ===$"
+    assert spec.worker_config["env"] == {
+        "PYTHONPATH": "/usr/local/lib/python3.10/site-packages"
+    }
+    assert "/usr/local/lib/python3.10/site-packages" not in json.dumps(plan.sanitized)
     calls = []
 
     def fake_ssh(config, argv, **kwargs):
-        calls.append(argv)
+        calls.append((argv, kwargs))
         if argv[:1] == ["uhd_find_devices"]:
             return subprocess.CompletedProcess(argv, 0, f"serial: {argv[-1].split('=', 1)[1]}\n", "")
         if argv[-1:] == ["--help"]:
@@ -186,7 +190,17 @@ def test_ssb_process_spec_and_preflight_are_simulable(tmp_path, monkeypatch):
         if argv[1:2] == ["-c"]:
             return subprocess.CompletedProcess(
                 argv, 0,
-                json.dumps({"python": "3.10", "numpy": "1", "scipy": "1", "h5py": "1", "matplotlib": "1", "uhd": "unknown"}) + "\n",
+                json.dumps({
+                    "python": "3.10",
+                    "python_executable": argv[0],
+                    "numpy": "1",
+                    "scipy": "1",
+                    "h5py": "1",
+                    "matplotlib": "1",
+                    "uhd": "unknown",
+                    "uhd_module_path": "/usr/local/lib/python3.10/site-packages/uhd/__init__.py",
+                    "uhd_has_multi_usrp": True,
+                }) + "\n",
                 "compatibility warning\n",
             )
         return subprocess.CompletedProcess(argv, 0, "", "")
@@ -194,9 +208,19 @@ def test_ssb_process_spec_and_preflight_are_simulable(tmp_path, monkeypatch):
     monkeypatch.setattr("sync_framework.orchestration.run_ssh", fake_ssh)
     _ssb_hardware_preflight(plan)
     environment = json.loads((run_dir / ".control" / "ssb-environment.json").read_text())
-    assert environment["warnings"] == ["compatibility warning"]
-    assert any(argv[-1:] == ["--help"] for argv in calls)
-    assert any(argv[:1] == ["uhd_find_devices"] for argv in calls)
+    assert environment["warnings"] == ["matplotlib warning", "compatibility warning"]
+    assert environment["environment_keys"] == ["PYTHONPATH"]
+    assert environment["uhd_has_multi_usrp"] is True
+    assert any(argv[-1:] == ["--help"] for argv, _ in calls)
+    assert any(argv[:1] == ["uhd_find_devices"] for argv, _ in calls)
+    contextual_calls = [
+        kwargs
+        for argv, kwargs in calls
+        if argv[-1:] == ["--help"] or argv[1:2] == ["-c"]
+    ]
+    assert contextual_calls
+    assert all(kwargs["cwd"] == plan.processes["rx_5g"].cwd for kwargs in contextual_calls)
+    assert all(kwargs["env"] == plan.processes["rx_5g"].env for kwargs in contextual_calls)
 
     def no_device(config, argv, **kwargs):
         result = fake_ssh(config, argv, **kwargs)
@@ -206,6 +230,19 @@ def test_ssb_process_spec_and_preflight_are_simulable(tmp_path, monkeypatch):
 
     monkeypatch.setattr("sync_framework.orchestration.run_ssh", no_device)
     with pytest.raises(ProcessFailure, match="not discovered"):
+        _ssb_hardware_preflight(plan)
+
+    def namespace_only(config, argv, **kwargs):
+        result = fake_ssh(config, argv, **kwargs)
+        if argv[1:2] == ["-c"]:
+            value = json.loads(result.stdout)
+            value["uhd_module_path"] = None
+            value["uhd_has_multi_usrp"] = False
+            return subprocess.CompletedProcess(argv, 0, json.dumps(value) + "\n", result.stderr)
+        return result
+
+    monkeypatch.setattr("sync_framework.orchestration.run_ssh", namespace_only)
+    with pytest.raises(ProcessFailure, match="functional module"):
         _ssb_hardware_preflight(plan)
 
 

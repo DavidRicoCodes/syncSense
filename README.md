@@ -107,7 +107,7 @@ PYTHONPATH=src python3 -m sync_framework.cli \
   --inference dummy --allow-hardware-receive
 ```
 
-PC5 espera a que finalicen la configuración UHD y el warmup CFO (`=== Online loop ===`), mide `duration_s` desde ese momento y solicita una parada limpia mediante `SIGINT`. La publicación exige JSONL válido de grids `[240,4]`, cierre de estadísticas, ratio válido ≥80 %, al menos `ceil(duration_s × min_valid_ssb_rate_hz)` grids y ausencia de `UHD RX error`. `rx_timestamp_ns` es tiempo de serialización del host para operación: no es el timestamp de llegada del PSS.
+PC5 espera a que finalicen la configuración UHD y el warmup CFO (`=== Online loop ===`), mide `duration_s` desde ese momento y solicita una parada limpia mediante `SIGINT`. El comando 5G declara en el inventario su `cwd` y `PYTHONPATH`; el preflight y el worker aplican exactamente ese contexto sin depender de `.bashrc`. La publicación exige JSONL válido de grids `[240,4]`, cierre de estadísticas, ratio válido ≥80 %, al menos `ceil(duration_s × min_valid_ssb_rate_hz)` grids y ausencia de `UHD RX error`. `rx_timestamp_ns` es tiempo de serialización del host para operación: no es el timestamp de llegada del PSS.
 
 ## Límites de esta fase
 

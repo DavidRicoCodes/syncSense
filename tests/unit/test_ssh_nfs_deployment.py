@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,21 @@ def test_ssh_command_building_and_errors(monkeypatch):
     prefix = ssh_prefix(config)
     assert "BatchMode=yes" in prefix and "StrictHostKeyChecking=yes" in prefix and "2222" in prefix
     assert remote_command(config, ["printf", "%s", "a b"])[-1].endswith("'a b'")
+    contextual = remote_command(
+        config,
+        ["python3", "-c", "print('ok')"],
+        cwd="/tmp/work space",
+        env={"PYTHONPATH": "/opt/site packages", "SYNC_MODE": "test"},
+    )
+    assert shlex.split(contextual[-1]) == [
+        "/usr/bin/env",
+        "--chdir=/tmp/work space",
+        "PYTHONPATH=/opt/site packages",
+        "SYNC_MODE=test",
+        "python3",
+        "-c",
+        "print('ok')",
+    ]
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: completed(code=8, err="denied"))
     with pytest.raises(ProcessFailure, match="denied"):
         run_ssh({"host": "alias"}, ["true"])
@@ -111,8 +127,13 @@ def test_real_worker_contract_with_harmless_child(tmp_path, monkeypatch):
         "run_id": "run_fake", "producer_id": "tx_wifi", "node_id": "pc2",
         "output_dir": str(output), "safety_class": "rf",
         "worker_path": str(REPO_ROOT / "tools" / "remote_process_worker.py"),
-        "argv": [sys.executable, "-u", "-c", "print('child ready')"],
-        "cwd": str(tmp_path), "env": {}, "artifacts": ["process.log"],
+        "argv": [
+            sys.executable,
+            "-u",
+            "-c",
+            "import os; print('child env=' + os.environ['SYNC_TEST_CONTEXT'])",
+        ],
+        "cwd": str(tmp_path), "env": {"SYNC_TEST_CONTEXT": "visible"}, "artifacts": ["process.log"],
     }
     spec = ProcessSpec(
         "tx_wifi", tuple(config["argv"]), tmp_path, {}, tmp_path / "ssh-real.log", "rf",
@@ -129,6 +150,7 @@ def test_real_worker_contract_with_harmless_child(tmp_path, monkeypatch):
     receipt = json.loads((output / "producer-result.json").read_text())
     assert receipt["simulation"] is False and receipt["synthetic"] is False
     assert receipt["artifacts"][0]["path"] == "process.log"
+    assert "child env=visible" in (output / "process.log").read_text()
 
 
 def test_deployment_verification_with_fake_ssh(monkeypatch):
