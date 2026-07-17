@@ -19,6 +19,28 @@ from .wifi_smoke import validate_wifi_smoke_outputs
 from .ssb_smoke import SSB_ROW_SCHEMA_REF, validate_ssb_smoke_outputs
 
 
+HARDWARE_SMOKE_TYPES = {
+    "wifi_link_smoke",
+    "ssb_rx_smoke",
+    "nosync_passive_hardware_smoke",
+}
+
+
+def _ssb_validation_duration(state: dict[str, Any], experiment_type: str) -> float:
+    if experiment_type == "ssb_rx_smoke":
+        return float(state["profile"]["parameters"]["duration_s"])
+    window = state.get("operational_window")
+    try:
+        duration = float(window["producer_active_duration_s"]["rx_5g"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PublicationFailure(
+            "Combined hardware smoke lacks a valid 5G operational duration"
+        ) from exc
+    if duration <= 0:
+        raise PublicationFailure("Combined hardware smoke has an empty 5G operational window")
+    return duration
+
+
 def _artifact_record(producer_id: str, expected, path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise PublicationFailure(f"Required artifact is missing or unsafe: {path}")
@@ -79,16 +101,24 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
     process_state = state["processes"][producer_id]
     if process_state.get("status") != "stopped" or process_state.get("exit_code") != 0:
         raise PublicationFailure(f"Producer did not stop successfully: {producer_id}")
-    if plan.profile.experiment_type in {"distributed_dummy", "wifi_link_smoke", "ssb_rx_smoke"}:
+    if plan.profile.experiment_type in {"distributed_dummy", *HARDWARE_SMOKE_TYPES}:
         _validate_remote_receipt(plan, producer_id)
     wifi_summary = None
     ssb_summary = None
-    if plan.profile.experiment_type == "wifi_link_smoke":
+    if (
+        plan.profile.experiment_type
+        in {"wifi_link_smoke", "nosync_passive_hardware_smoke"}
+        and producer_id == "rx_wifi"
+    ):
         wifi_summary = validate_wifi_smoke_outputs(plan.run_dir, int(plan.parameters["num_beacons"]))
-    elif plan.profile.experiment_type == "ssb_rx_smoke":
+    if (
+        plan.profile.experiment_type
+        in {"ssb_rx_smoke", "nosync_passive_hardware_smoke"}
+        and producer_id == "rx_5g"
+    ):
         ssb_summary = validate_ssb_smoke_outputs(
             plan.run_dir,
-            float(plan.parameters["duration_s"]),
+            _ssb_validation_duration(state, plan.profile.experiment_type),
             float(plan.parameters["min_valid_ssb_rate_hz"]),
         )
     records = []
@@ -259,17 +289,23 @@ def _publish_session_locked(plan: ExecutionPlan, store: StateStore, *, repo_root
             "roles": [{"producer_id": p.definition.producer_id, "node_id": p.definition.node_id, "role": p.definition.role, "modality": p.definition.modality} for p in plan.processes.values()],
             "clock_domains": list(plan.profile.clock_domains),
             "clock_relationships": list(plan.profile.clock_relationships),
-            "dataset_qualification": "integration_smoke" if plan.profile.experiment_type in {"wifi_link_smoke", "ssb_rx_smoke"} else "framework_validation",
+            "dataset_qualification": "integration_smoke" if plan.profile.experiment_type in HARDWARE_SMOKE_TYPES else "framework_validation",
             "timestamp_semantics": (
                 "native_receiver_fields_unverified_no_canonical_events"
                 if plan.profile.experiment_type == "wifi_link_smoke"
                 else "host_serialization_time_operational_only_no_canonical_events"
                 if plan.profile.experiment_type == "ssb_rx_smoke"
+                else "independent_5g_host_serialization_and_wifi_host_delivery_operational_only_no_canonical_events_no_cross_band_pairing"
+                if plan.profile.experiment_type == "nosync_passive_hardware_smoke"
                 else "profile_defined"
             ),
             "producers": producer_refs,
             "inference_runs": [],
         }
+        if plan.profile.experiment_type == "nosync_passive_hardware_smoke":
+            if state.get("operational_window") is None:
+                raise PublicationFailure("Combined hardware smoke lacks its operational window")
+            session["operational_window"] = state["operational_window"]
         validate_document(session, "session-manifest")
         atomic_write_json(final_path, session, mode=0o644)
         verify_published_manifest(store.run_dir)

@@ -24,7 +24,7 @@ SYNC/
 └── rx_sync/                    # Submódulo de pruebas multibanda X410
 ```
 
-El paquete padre implementa validación de contratos, procesos locales, SSH con capacidades explícitas, estado atómico, supervisión foreground, NFSv4 explícito, publicación, recuperación e inferencia dummy. `wifi_link_smoke` y `ssb_rx_smoke` habilitan DSP/hardware solo con sus flags de autorización; las pruebas automáticas siguen usando dobles. Los workers distribuidos viven en `tools/` y se ejecutan desde clones Git sin instalar el paquete en los clientes.
+El paquete padre implementa validación de contratos, procesos locales, SSH con capacidades explícitas, estado atómico, supervisión foreground, NFSv4 explícito, publicación, recuperación e inferencia dummy. `wifi_link_smoke`, `ssb_rx_smoke` y el conjunto `nosync_passive_hardware_smoke` habilitan DSP/hardware solo con sus flags de autorización; las pruebas automáticas siguen usando dobles. Los workers distribuidos viven en `tools/` y se ejecutan desde clones Git sin instalar el paquete en los clientes.
 
 Los archivos locales `AGENTS.md` y `.codex/*` existen para mantener continuidad durante el desarrollo, pero están ignorados deliberadamente y no forman parte del producto versionado. `.codex/HANDOFF.md` es el punto de entrada para trasladar el workspace a PC5 y retomarlo sin el chat original.
 
@@ -70,6 +70,6 @@ Limitaciones relevantes:
 ## Fronteras de responsabilidad
 
 - Cada submódulo mantiene su propio historial, dependencias, documentación y política de datos generados.
-- El repositorio padre coordina productores simulados y dos smokes hardware independientes sin copiar ni absorber la lógica DSP de los hijos.
+- El repositorio padre coordina productores simulados, los smokes hardware por banda y un smoke conjunto no sincronizado sin copiar ni absorber la lógica DSP de los hijos.
 - Cambiar una interfaz o script de un submódulo requiere una necesidad concreta y aprobación previa.
 - Datasets, capturas, estados de ejecución, credenciales y contexto de agentes no se versionan en el padre.

@@ -11,7 +11,7 @@ from typing import Any
 from .checksums import sha256_file
 from .config import document_digest
 from .domain import InferenceFailure, SCHEMA_VERSION
-from .publication import verify_published_manifest
+from .publication import _ssb_validation_duration, verify_published_manifest
 from .state import utc_now
 from .storage import atomic_write_json
 from .validation import validate_document
@@ -80,6 +80,41 @@ class DummyBatchModelAdapter:
                 "valid_ratio": ssb["valid_ratio"],
                 "valid_rate_hz": ssb["valid_rate_hz"],
                 "input_data": "real_hardware_integration_smoke",
+            }
+        elif manifest["profile"]["profile_id"] == "nosync_passive_hardware_smoke":
+            requested = int(manifest["parameters"]["num_beacons"])
+            received = next(
+                int(artifact["row_count"])
+                for producer in producer_manifests if producer["producer_id"] == "rx_wifi"
+                for artifact in producer["artifacts"] if artifact["artifact_type"] == "wifi_csi_feature_rows"
+            )
+            state_like = {
+                "profile": {"parameters": manifest["parameters"]},
+                "operational_window": manifest["operational_window"],
+            }
+            ssb = validate_ssb_smoke_outputs(
+                run_dir,
+                _ssb_validation_duration(state_like, "nosync_passive_hardware_smoke"),
+                float(manifest["parameters"]["min_valid_ssb_rate_hz"]),
+            )
+            summary["nosync_passive_hardware_smoke"] = {
+                "wifi": {
+                    "beacons_requested": requested,
+                    "frames_received": received,
+                    "frames_lost": requested - received,
+                    "receive_ratio": received / requested,
+                },
+                "ssb_5g": {
+                    "observed_duration_s": ssb["duration_s"],
+                    "iterations": ssb["iterations"],
+                    "valid_grids": ssb["valid_grids"],
+                    "invalid_grids": ssb["invalid_grids"],
+                    "valid_ratio": ssb["valid_ratio"],
+                    "valid_rate_hz": ssb["valid_rate_hz"],
+                },
+                "input_data": "real_hardware_integration_smoke",
+                "fusion_performed": False,
+                "clock_relation": "not_comparable",
             }
         summary_path = output_dir / "summary.json"
         atomic_write_json(summary_path, summary)

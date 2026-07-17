@@ -31,6 +31,27 @@
     "parameters": {"type": "object"},
     "dataset_qualification": {"enum": ["integration_smoke", "framework_validation"]},
     "timestamp_semantics": {"type": "string", "minLength": 1},
+    "operational_window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "semantics",
+        "receivers_ready_at",
+        "completion_triggered_at",
+        "duration_s",
+        "producer_active_duration_s"
+      ],
+      "properties": {
+        "semantics": {"const": "pc5_supervisor_operational_boundary_not_acquisition_time"},
+        "receivers_ready_at": {"type": "string", "format": "date-time"},
+        "completion_triggered_at": {"type": "string", "format": "date-time"},
+        "duration_s": {"type": "number", "minimum": 0},
+        "producer_active_duration_s": {
+          "type": "object",
+          "additionalProperties": {"type": "number", "minimum": 0}
+        }
+      }
+    },
     "git_revisions": {
       "type": "object", "additionalProperties": false, "required": ["parent", "modulos_rx_tx", "rx_sync"],
       "properties": {"parent": {"$ref": "#/$defs/revision"}, "modulos_rx_tx": {"$ref": "#/$defs/revision"}, "rx_sync": {"$ref": "#/$defs/revision"}}

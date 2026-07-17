@@ -7,6 +7,7 @@ import hashlib
 import os
 import signal
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from .config import load_inventory, load_profile, resolve_parameters
 from .deployment import verify_remote_workspaces
 from .domain import CapabilityDisabled, ExecutionPlan, ProcessFailure, SyncError, ValidationFailure
 from .planning import build_plan
-from .processes.base import ProcessHandle, ProcessSpec
+from .processes.base import ProcessHandle, ProcessSpec, ProcessStatus
 from .processes.local import same_process
 from .processes.router import ProcessRouter
 from .publication import publish_session, verify_published_manifest
@@ -80,7 +81,10 @@ def _allowed_safety(*, allow_remote_simulation: bool, allow_hardware_receive: bo
 
 
 def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
-    if plan.profile.experiment_type != "wifi_link_smoke":
+    if plan.profile.experiment_type not in {
+        "wifi_link_smoke",
+        "nosync_passive_hardware_smoke",
+    }:
         return
     source = repo_root / "modulos_rx_tx" / "configs" / "pipelines" / "wifi_beacon_online.json"
     try:
@@ -99,10 +103,53 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
 
 
 def _hardware_preflight(plan: ExecutionPlan) -> None:
-    if plan.profile.experiment_type == "ssb_rx_smoke":
+    has_wifi_hardware = (
+        {"rx_wifi", "tx_wifi"} <= set(plan.processes)
+        and plan.profile.experiment_type
+        in {"wifi_link_smoke", "nosync_passive_hardware_smoke"}
+    )
+    has_ssb_hardware = (
+        "rx_5g" in plan.processes
+        and plan.profile.experiment_type
+        in {"ssb_rx_smoke", "nosync_passive_hardware_smoke"}
+    )
+    if has_wifi_hardware:
+        _wifi_hardware_preflight(plan)
+    if has_ssb_hardware:
         _ssb_hardware_preflight(plan)
-        return
-    if plan.profile.experiment_type != "wifi_link_smoke":
+    if (
+        plan.profile.experiment_type == "nosync_passive_hardware_smoke"
+        and plan.processes["rx_wifi"].command.safety_class != "simulation"
+        and plan.processes["rx_5g"].command.safety_class != "simulation"
+    ):
+        wifi_serial = _wifi_rx_serial(plan)
+        ssb_serial = _argument_value(plan.processes["rx_5g"].argv, "--serial")
+        if wifi_serial == ssb_serial:
+            raise ProcessFailure("5G and WiFi receivers must use different USRP serials")
+
+
+def _argument_value(argv: tuple[str, ...], option: str) -> str:
+    try:
+        return next(argv[index + 1] for index, value in enumerate(argv[:-1]) if value == option)
+    except StopIteration as exc:
+        raise ProcessFailure(f"Required command option is missing: {option}") from exc
+
+
+def _wifi_rx_serial(plan: ExecutionPlan) -> str:
+    config_path = plan.processes["rx_wifi"].producer_dir / "runtime" / "effective-config.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        device_args = config["input"]["device_args"]
+        return device_args.split("serial=", 1)[1].split(",", 1)[0]
+    except (OSError, json.JSONDecodeError, KeyError, IndexError) as exc:
+        raise ProcessFailure("WiFi RX config does not contain a usable USRP serial") from exc
+
+
+def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
+    if plan.profile.experiment_type not in {
+        "wifi_link_smoke",
+        "nosync_passive_hardware_smoke",
+    }:
         return
     tx = plan.processes["tx_wifi"]
     rx = plan.processes["rx_wifi"]
@@ -119,9 +166,10 @@ def _hardware_preflight(plan: ExecutionPlan) -> None:
     if not rx_binary:
         raise ProcessFailure("RX command does not identify online_waveform_pipeline")
     run_ssh(rx.node.ssh, ["test", "-x", rx_binary], timeout=10)
-    config_path = rx.producer_dir / "runtime" / "effective-config.json"
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    for resolved, serial in ((tx, next(tx.argv[i + 1] for i, value in enumerate(tx.argv[:-1]) if value == "--serial")), (rx, config["input"]["device_args"].split("serial=", 1)[1])):
+    for resolved, serial in (
+        (tx, _argument_value(tx.argv, "--serial")),
+        (rx, _wifi_rx_serial(plan)),
+    ):
         assert resolved.node.ssh
         found = run_ssh(resolved.node.ssh, ["uhd_find_devices", "--args", f"serial={serial}"], timeout=30)
         if serial not in found.stdout:
@@ -186,8 +234,8 @@ def _ssb_hardware_preflight(plan: ExecutionPlan) -> None:
     )
     atomic_write_json(plan.run_dir / ".control" / "ssb-environment.json", environment, mode=0o600)
     try:
-        serial = next(rx.argv[index + 1] for index, value in enumerate(rx.argv[:-1]) if value == "--serial")
-    except StopIteration as exc:
+        serial = _argument_value(rx.argv, "--serial")
+    except ProcessFailure as exc:
         raise ProcessFailure("5G RX serial is not configured") from exc
     found = run_ssh(rx.node.ssh, ["uhd_find_devices", "--args", f"serial={serial}"], timeout=30)
     if serial not in found.stdout:
@@ -303,6 +351,7 @@ def _is_ready(plan: ExecutionPlan, producer_id: str, adapter: Any, handle: Proce
 
 def _stop_all(plan: ExecutionPlan, store: StateStore, router: ProcessRouter, handles: dict[str, ProcessHandle], *, reason: str) -> None:
     for group in plan.profile.stop_groups:
+        pending: dict[str, ProcessHandle] = {}
         for producer_id in group:
             if store.load()["processes"][producer_id].get("status") == "stopped":
                 continue
@@ -314,6 +363,10 @@ def _stop_all(plan: ExecutionPlan, store: StateStore, router: ProcessRouter, han
                 else:
                     continue
             _set_process(store, producer_id, status="stopping")
+            pending[producer_id] = handle
+
+        def stop_one(item: tuple[str, ProcessHandle]) -> tuple[str, ProcessStatus, str]:
+            producer_id, handle = item
             adapter = router.for_handle(handle)
             grace = plan.processes[producer_id].definition.timeouts["stop_grace_s"]
             status = adapter.stop(handle, grace)
@@ -323,11 +376,63 @@ def _stop_all(plan: ExecutionPlan, store: StateStore, router: ProcessRouter, han
                 status = adapter.kill(handle)
             if status.running:
                 raise ProcessFailure(f"Could not stop process: {producer_id}")
+            return producer_id, status, termination
+
+        if not pending:
+            continue
+        results: list[tuple[str, ProcessStatus, str]] = []
+        errors: list[Exception] = []
+        with ThreadPoolExecutor(max_workers=len(pending)) as executor:
+            futures = [executor.submit(stop_one, item) for item in pending.items()]
+            for future in futures:
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    errors.append(exc)
+        for producer_id, status, termination in results:
+            handle = pending[producer_id]
             exit_code = status.exit_code
             if exit_code is None and not same_process(handle):
                 # A non-child recovered by another CLI cannot expose wait status.
                 exit_code = -1
             _set_process(store, producer_id, status="stopped", stopped_at=utc_now(), exit_code=exit_code, termination_reason=termination)
+        if errors:
+            raise errors[0]
+
+
+def _record_operational_window(
+    plan: ExecutionPlan,
+    store: StateStore,
+    *,
+    readiness_monotonic: dict[str, float],
+    completion_monotonic: float,
+) -> None:
+    if plan.profile.experiment_type != "nosync_passive_hardware_smoke":
+        return
+    state = store.load()
+    receiver_ids = [
+        producer_id
+        for producer_id, resolved in plan.processes.items()
+        if resolved.definition.role == "receiver"
+    ]
+    ready_at = [state["processes"][producer_id]["ready_at"] for producer_id in receiver_ids]
+    if any(value is None for value in ready_at):
+        raise ProcessFailure("Cannot close operational window before every receiver is ready")
+    combined_start = max(readiness_monotonic[producer_id] for producer_id in receiver_ids)
+    window = {
+        "semantics": "pc5_supervisor_operational_boundary_not_acquisition_time",
+        "receivers_ready_at": max(ready_at),
+        "completion_triggered_at": utc_now(),
+        "duration_s": max(0.0, completion_monotonic - combined_start),
+        "producer_active_duration_s": {
+            producer_id: max(
+                0.0,
+                completion_monotonic - readiness_monotonic[producer_id],
+            )
+            for producer_id in receiver_ids
+        },
+    }
+    store.update(lambda current: current.update(operational_window=window))
 
 
 def _supervisor_identity() -> dict[str, Any]:
@@ -354,6 +459,7 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
         previous_handlers[signum] = signal.signal(signum, signal_handler)
     try:
         identity = _supervisor_identity()
+        readiness_monotonic: dict[str, float] = {}
 
         def claim(state: dict[str, Any]) -> None:
             if state["state"] != "ARMED" or state.get("supervisor") is not None:
@@ -385,6 +491,7 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
                     current_adapter = router.for_handle(handles[producer_id])
                     if _is_ready(plan, producer_id, current_adapter, handles[producer_id], starts[producer_id]):
                         _set_process(store, producer_id, status="ready", ready_at=utc_now())
+                        readiness_monotonic[producer_id] = time.monotonic()
                         pending.remove(producer_id)
                     elif time.monotonic() >= deadlines[producer_id]:
                         raise ProcessFailure(f"Readiness timeout: {producer_id}")
@@ -407,6 +514,12 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
                 return store.load()
             if state.get("stop_request"):
                 reason = "operator_stop"
+                _record_operational_window(
+                    plan,
+                    store,
+                    readiness_monotonic=readiness_monotonic,
+                    completion_monotonic=now,
+                )
                 _stop_all(plan, store, router, handles, reason=reason)
                 store.transition("FINALIZING", reason=reason)
                 return store.load()
@@ -432,6 +545,12 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
                     quiet_s = float(plan.parameters[completion["quiet_s_parameter"]])
                     max_drain_s = float(plan.parameters[completion["max_drain_s_parameter"]])
                     if now - last_growth >= quiet_s or now - drain_started >= max_drain_s:
+                        _record_operational_window(
+                            plan,
+                            store,
+                            readiness_monotonic=readiness_monotonic,
+                            completion_monotonic=now,
+                        )
                         _stop_all(plan, store, router, handles, reason="finite_tx_drain_complete")
                         store.transition("FINALIZING", reason="finite_tx_drain_complete")
                         return store.load()

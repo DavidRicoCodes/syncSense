@@ -131,7 +131,11 @@ def validate_profile_semantics(raw: dict[str, Any]) -> None:
     for relation in raw["clock_relationships"]:
         if relation["left"] not in clocks or relation["right"] not in clocks:
             raise ValidationFailure("Clock relationship references an unknown domain")
-    if raw["experiment_type"] in {"nosync_passive", "distributed_dummy"}:
+    if raw["experiment_type"] in {
+        "nosync_passive",
+        "distributed_dummy",
+        "nosync_passive_hardware_smoke",
+    }:
         receiver_clocks = [p["clock_domain_id"] for p in raw["processes"] if p["role"] == "receiver"]
         if len(receiver_clocks) != 2 or len(set(receiver_clocks)) != 2:
             raise ValidationFailure(f"{raw['experiment_type']} requires two independent receiver clock domains")

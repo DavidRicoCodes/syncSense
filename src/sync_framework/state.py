@@ -55,6 +55,7 @@ class StateStore:
             "created_at": now, "updated_at": now, "profile": profile, "inventory": inventory,
             "inventory_path": inventory_path, "supervisor": None, "stop_request": None,
             "processes": processes, "last_error": None, "history": [], "recovery_count": 0,
+            "operational_window": None,
         }
         validate_document(state, "run-state")
         with self.locked():

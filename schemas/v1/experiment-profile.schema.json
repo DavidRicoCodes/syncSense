@@ -13,7 +13,7 @@
     "schema_version": {"const": "1.0.0"},
     "profile_id": {"$ref": "#/$defs/id"},
     "profile_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
-    "experiment_type": {"enum": ["nosync_passive", "distributed_dummy", "wifi_link_smoke", "ssb_rx_smoke"]},
+    "experiment_type": {"enum": ["nosync_passive", "distributed_dummy", "wifi_link_smoke", "ssb_rx_smoke", "nosync_passive_hardware_smoke"]},
     "description": {"type": "string"},
     "parameters": {
       "type": "object",

@@ -105,6 +105,32 @@
         }
       }
     },
-    "recovery_count": {"type": "integer", "minimum": 0}
+    "recovery_count": {"type": "integer", "minimum": 0},
+    "operational_window": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "semantics",
+            "receivers_ready_at",
+            "completion_triggered_at",
+            "duration_s",
+            "producer_active_duration_s"
+          ],
+          "properties": {
+            "semantics": {"const": "pc5_supervisor_operational_boundary_not_acquisition_time"},
+            "receivers_ready_at": {"type": "string", "format": "date-time"},
+            "completion_triggered_at": {"type": "string", "format": "date-time"},
+            "duration_s": {"type": "number", "minimum": 0},
+            "producer_active_duration_s": {
+              "type": "object",
+              "additionalProperties": {"type": "number", "minimum": 0}
+            }
+          }
+        }
+      ]
+    }
   }
 }

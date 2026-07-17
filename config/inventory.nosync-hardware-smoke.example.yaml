@@ -1,0 +1,78 @@
+schema_version: 1.0.0
+inventory_id: pc5_nosync_hardware_smoke_example
+storage:
+  backend: nfs
+  root: /srv/sync-experiments
+  client_mount: /mnt/sync-experiments
+nodes:
+  - node_id: pc2
+    transport: ssh
+    workspace: /path/to/syncSense
+    ssh: {host: pc2}
+    commands:
+      - command_id: wifi_finite_tx
+        argv:
+          - /usr/bin/python3
+          - -u
+          - "{workspace}/modulos_rx_tx/tests/wifi/python/tx_finite_wifi_beacons.py"
+          - --serial
+          - REPLACE_TX_SERIAL_IN_LOCAL_INVENTORY
+          - --channel-index
+          - "0"
+          - --wifi-channel
+          - "11"
+          - --ssid
+          - USRP_CHANNEL11
+          - --bssid
+          - "02:11:22:33:44:55"
+          - --gain
+          - "76"
+          - --amplitude
+          - "0.5"
+          - --num-beacons
+          - "{num_beacons}"
+        cwd: "{workspace}/modulos_rx_tx"
+        env: {PYTHONPATH: "{workspace}/modulos_rx_tx"}
+        safety_class: rf
+  - node_id: pc3pc4
+    transport: ssh
+    workspace: /path/to/syncSense
+    ssh: {host: pc3pc4}
+    commands:
+      - command_id: wifi_online_rx
+        argv: [stdbuf, -oL, -eL, "{workspace}/modulos_rx_tx/build/cpp/online_waveform_pipeline", --config, "{effective_config}"]
+        cwd: "{workspace}/modulos_rx_tx"
+        safety_class: dsp
+      - command_id: ssb_online_rx
+        argv:
+          - "{workspace}/modulos_rx_tx/.venv_uhd/bin/python"
+          - -u
+          - "{workspace}/modulos_rx_tx/src/python/ssb_python/online_5g_rxgrid_jsonl.py"
+          - --serial
+          - REPLACE_5G_RX_SERIAL_IN_LOCAL_INVENTORY
+          - --freq
+          - "3541.44e6"
+          - --rate
+          - "15.36e6"
+          - --gain
+          - "60"
+          - --duration-ms
+          - "20"
+          - --channel
+          - "0"
+          - --force-nid2
+          - "0"
+          - --enable-cfo-correction
+          - --cfo-warmup-iters
+          - "30"
+          - --cfo-correction-sign
+          - "-1"
+          - --output-jsonl
+          - "{producer_dir}/rxgridssb.jsonl"
+          - --truncate-output
+          - --progress-every
+          - "1"
+        cwd: "{workspace}/modulos_rx_tx"
+        env:
+          PYTHONPATH: /usr/local/lib/python3.10/site-packages
+        safety_class: dsp
