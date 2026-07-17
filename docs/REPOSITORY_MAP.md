@@ -31,7 +31,7 @@ Los archivos locales `AGENTS.md` y `.codex/*` existen para mantener continuidad 
 ## Submódulo `modulos_rx_tx`
 
 - Origen: `https://github.com/ammendezuc3m/DT_sensing_fusion_WIFI5G.git`
-- Revisión fijada actual: `b4a5dbe08c7e8ad788ea7352c75801ec95bce451`
+- Revisión fijada actual: `84d9f389998e6cbc0d8762397f566a744899100c`
 
 Capacidades observadas:
 
