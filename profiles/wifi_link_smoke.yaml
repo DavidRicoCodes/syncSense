@@ -1,11 +1,12 @@
 schema_version: 1.0.0
 profile_id: wifi_link_smoke
-profile_version: 1.0.1
+profile_version: 1.1.0
 experiment_type: wifi_link_smoke
-description: Hardware integration smoke using WiFi detector metric threshold 0.85; not a scientific timestamp dataset.
+description: Hardware integration smoke with a configurable WiFi detector threshold and operational latency traces; not a scientific timestamp dataset.
 parameters:
   label: {type: string, required: true}
   num_beacons: {type: integer, required: true, minimum: 1, maximum: 600}
+  detector_threshold: {type: number, required: false, default: 0.85, minimum: 0, maximum: 1}
   rx_quiet_s: {type: number, required: false, default: 2, minimum: 0.1, maximum: 30}
   rx_max_drain_s: {type: number, required: false, default: 10, minimum: 1, maximum: 60}
 clock_domains:
@@ -28,6 +29,8 @@ processes:
     expected_artifacts:
       - {artifact_id: rx_wifi_features, artifact_type: wifi_csi_feature_rows, media_type: application/x-ndjson, path: features.jsonl, required: true}
       - {artifact_id: rx_wifi_csi, artifact_type: wifi_csi_cf32, media_type: application/octet-stream, path: csi.cf32, required: true}
+      - {artifact_id: rx_wifi_frame_timings, artifact_type: wifi_frame_timing_rows, media_type: application/x-ndjson, path: frame-timings.jsonl, required: true}
+      - {artifact_id: rx_wifi_block_timings, artifact_type: wifi_block_timing_rows, media_type: application/x-ndjson, path: block-timings.jsonl, required: true}
       - {artifact_id: rx_wifi_log, artifact_type: process_log, media_type: text/plain, path: process.log, required: true}
       - {artifact_id: rx_wifi_receipt, artifact_type: producer_result, media_type: application/json, path: producer-result.json, required: true}
   - producer_id: tx_wifi

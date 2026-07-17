@@ -31,7 +31,7 @@ Los archivos locales `AGENTS.md` y `.codex/*` existen para mantener continuidad 
 ## Submódulo `modulos_rx_tx`
 
 - Origen: `https://github.com/ammendezuc3m/DT_sensing_fusion_WIFI5G.git`
-- Revisión fijada actual: `2a7b48b307f1e9a2e310374af01b27aca0669212`
+- Revisión fijada actual: `b4a5dbe08c7e8ad788ea7352c75801ec95bce451`
 
 Capacidades observadas:
 
@@ -40,6 +40,7 @@ Capacidades observadas:
 - Captura de datasets, entrenamiento e inferencia para sensing 5G.
 - Generación y transmisión de beacons 802.11a/g mediante USRP.
 - Recepción WiFi, seguimiento L-LTF y extracción de CSI.
+- Trazas opcionales de latencia operacional WiFi por bloque y frame, sin semántica de timestamp RF.
 - Salidas H5, CSV, JSON de estado e integración experimental mediante SCP.
 - Material MATLAB histórico o de validación junto al flujo Python recomendado.
 

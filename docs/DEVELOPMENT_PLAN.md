@@ -124,6 +124,8 @@ Antes de incorporar RX 5G se valida el enlace PC2 → PC3PC4 → NFS → PC5 med
 
 Este recorrido se clasifica expresamente como `integration_smoke`: conserva los timestamps nativos del receptor solo como campos no verificados, no crea eventos temporales canónicos y no afirma alineación 5G/WiFi. La inferencia posterior sigue siendo dummy y solo resume solicitados, recibidos, perdidos y ratio.
 
+El threshold del detector es un parámetro reproducible del perfil, con `0.85` como valor predeterminado. Las campañas comparativas pueden usar 0.80, 0.85 y 0.90 sin cambiar el config versionado. El receptor registra opcionalmente trazas de latencia por bloque y frame; son medidas del reloj monotónico del host estimadas desde la entrega del bloque y el offset de muestras, no tiempo RF ni eventos canónicos.
+
 #### Incremento de integración RX 5G pasivo
 
 `ssb_rx_smoke` inicia en PC3PC4 el receptor continuo `online_5g_rxgrid_jsonl.py`, espera a `=== Online loop ===` después de la configuración UHD y el warmup CFO, captura durante `duration_s` y solicita parada mediante `SIGINT`. Publica `rxGridSSB` JSONL solo si el cierre del log es coherente, el ratio válido es ≥80 %, se alcanza la tasa mínima configurada y no existen errores UHD.

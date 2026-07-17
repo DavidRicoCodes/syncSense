@@ -54,7 +54,13 @@ def test_wifi_smoke_finite_tx_then_quiet_rx(tmp_path):
     assert state["processes"]["rx_wifi"]["termination_reason"] == "finite_tx_drain_complete"
     assert state["processes"]["tx_wifi"]["stopped_at"] <= state["processes"]["rx_wifi"]["stopped_at"]
     for producer_id, paths in {
-        "rx_wifi": ["features.jsonl", "csi.cf32", "process.log"],
+        "rx_wifi": [
+            "features.jsonl",
+            "csi.cf32",
+            "frame-timings.jsonl",
+            "block-timings.jsonl",
+            "process.log",
+        ],
         "tx_wifi": ["process.log"],
     }.items():
         producer_dir = plan.run_dir / producer_id
