@@ -33,6 +33,8 @@ nodes:
           - --enable-cfo-correction
           - --cfo-warmup-iters
           - "30"
+          - --warmup-iters
+          - "5"
           - --cfo-correction-sign
           - "-1"
           - --duration-s
