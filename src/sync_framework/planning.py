@@ -20,6 +20,14 @@ ALLOWED_PLACEHOLDERS = {
 }
 
 
+def experiment_id_for_run(run_id: str | None) -> int:
+    value = int(
+        hashlib.sha256((run_id or "dry-run").encode()).hexdigest()[:8],
+        16,
+    ) & 0xFFFF
+    return value or 1
+
+
 def _format_value(value: str, context: dict[str, Any]) -> str:
     fields = {field for _, field, _, _ in Formatter().parse(value) if field}
     unknown = fields - ALLOWED_PLACEHOLDERS
@@ -65,9 +73,7 @@ def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | 
             "producer_dir": str(execution_producer_dir),
             "workspace": str(node.workspace),
             "effective_config": str(execution_producer_dir / "runtime" / "effective-config.json"),
-            "experiment_id": (
-                int(hashlib.sha256((run_id or "dry-run").encode()).hexdigest()[:8], 16)
-            ),
+            "experiment_id": experiment_id_for_run(run_id),
         }
         argv = tuple(_format_value(arg, context) for arg in command.argv)
         cwd = Path(_format_value(str(command.cwd), context)).expanduser()

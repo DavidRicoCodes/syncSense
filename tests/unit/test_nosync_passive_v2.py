@@ -31,7 +31,7 @@ from sync_framework.orchestration import (
     _prepare_wifi_config,
     make_process_spec,
 )
-from sync_framework.planning import build_plan
+from sync_framework.planning import build_plan, experiment_id_for_run
 from sync_framework.publication import build_producer_manifest
 from sync_framework.validation import validate_document
 
@@ -120,6 +120,8 @@ def test_real_profile_has_separated_roles_and_exact_clock_contract() -> None:
     assert global_timeout_s(parameters) == pytest.approx(
         90 + 200 * 0.1024 + 3 + 2 + 10 + 30
     )
+    assert 1 <= experiment_id_for_run("run_test") <= 0xFFFF
+    assert experiment_id_for_run("run_test") == experiment_id_for_run("run_test")
 
 
 def test_position_validation_is_bounded() -> None:

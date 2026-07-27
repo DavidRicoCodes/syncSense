@@ -15,7 +15,7 @@ from typing import Any
 from .config import load_inventory, load_profile, resolve_parameters
 from .deployment import verify_remote_workspaces
 from .domain import CapabilityDisabled, ExecutionPlan, ProcessFailure, SyncError, ValidationFailure
-from .planning import build_plan
+from .planning import build_plan, experiment_id_for_run
 from .processes.base import ProcessHandle, ProcessSpec, ProcessStatus
 from .processes.local import same_process
 from .processes.router import ProcessRouter
@@ -141,10 +141,9 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
             )
         config["input"]["device_args"] = device_args
         config["input"]["gain_db"] = float(plan.parameters["wifi_rx_gain_db"])
-        config["waveform_config"]["filters"]["experiment_id"] = int(
-            hashlib.sha256((plan.run_id or "").encode()).hexdigest()[:8],
-            16,
-        )
+        config["waveform_config"]["filters"][
+            "experiment_id"
+        ] = experiment_id_for_run(plan.run_id)
     config["output"]["feature_path"] = str(execution / "features.jsonl")
     config["output"]["csi_raw_path"] = str(execution / "csi.cf32")
     config["output"]["write_timings"] = True
