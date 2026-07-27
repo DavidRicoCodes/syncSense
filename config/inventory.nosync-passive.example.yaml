@@ -46,7 +46,7 @@ nodes:
           - --output-hssb-cf32
           - "{producer_dir}/hssb.cf32"
           - --processing-workers
-          - "2"
+          - "1"
           - --truncate-output
         cwd: "{workspace}/modulos_rx_tx"
         env:
