@@ -4,6 +4,7 @@ import json
 import runpy
 
 import pytest
+import yaml
 
 from sync_framework.cli import main
 
@@ -79,3 +80,57 @@ def test_cli_nfs_routes_require_explicit_apply(inventory_path, capsys, monkeypat
     assert invoke(capsys, *common, "teardown", "--apply")[1]["status"] == "removed"
     code, _, error = invoke(capsys, *common, "teardown")
     assert code == 4 and "CAPABILITY_DISABLED" in error
+
+
+def test_cli_association_run_and_status(
+    inventory_path, tmp_path, capsys, monkeypatch
+):
+    run_id = "run_20260101T000000000000Z_000000000000"
+    storage = tmp_path / "association-storage"
+    (storage / "runs" / run_id).mkdir(parents=True)
+    raw = yaml.safe_load(inventory_path.read_text(encoding="utf-8"))
+    raw["storage"]["root"] = str(storage)
+    inventory_path.write_text(
+        yaml.safe_dump(raw, sort_keys=False), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "sync_framework.cli.run_nearest_ntp_association",
+        lambda run_dir, maximum_delta_ms: {
+            "association_id": "assoc_test",
+            "run_id": run_dir.name,
+            "status": "SUCCEEDED",
+            "maximum_delta_ms": maximum_delta_ms,
+        },
+    )
+    monkeypatch.setattr(
+        "sync_framework.cli.association_status",
+        lambda run_dir, association_id: {
+            "run_id": run_dir.name,
+            "association_id": association_id,
+            "status": "SUCCEEDED",
+        },
+    )
+    common = ("--inventory", str(inventory_path), "--format", "json")
+    code, result, error = invoke(
+        capsys,
+        *common,
+        "association",
+        "run",
+        run_id,
+        "--adapter",
+        "nearest-ntp",
+        "--maximum-delta-ms",
+        "25",
+    )
+    assert code == 0, error
+    assert result["maximum_delta_ms"] == 25
+    code, status, error = invoke(
+        capsys,
+        *common,
+        "association",
+        "status",
+        run_id,
+        "assoc_test",
+    )
+    assert code == 0, error
+    assert status["association_id"] == "assoc_test"

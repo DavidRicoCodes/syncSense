@@ -17,12 +17,14 @@ from .storage import atomic_write_json
 from .validation import validate_document, validate_event_semantics, validate_relative_path
 from .wifi_smoke import validate_wifi_smoke_outputs
 from .ssb_smoke import SSB_ROW_SCHEMA_REF, validate_ssb_smoke_outputs
+from .nosync_passive import validate_5g_outputs, validate_n310_outputs
 
 
 HARDWARE_SMOKE_TYPES = {
     "wifi_link_smoke",
     "ssb_rx_smoke",
     "nosync_passive_hardware_smoke",
+    "nosync_passive",
 }
 
 
@@ -54,6 +56,29 @@ def _artifact_record(producer_id: str, expected, path: Path) -> dict[str, Any]:
         "size_bytes": path.stat().st_size,
         "checksum": {"algorithm": "sha256", "hex": sha256_file(path)},
     }
+
+
+def _validate_operational_time_artifacts(run_dir: Path, producer_id: str) -> None:
+    anchors = run_dir / producer_id / "host-clock-anchors.jsonl"
+    try:
+        raw = anchors.read_bytes()
+        if not raw.endswith(b"\n"):
+            raise PublicationFailure(f"Truncated host anchors: {producer_id}")
+        values = [json.loads(line) for line in raw.splitlines()]
+        if [value.get("phase") for value in values] != ["start", "end"]:
+            raise PublicationFailure(f"Host anchors do not close: {producer_id}")
+        for value in values:
+            validate_document(value, "host-clock-anchor")
+        ntp = json.loads(
+            (run_dir / producer_id / "ntp-status.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        validate_document(ntp, "ntp-status")
+    except (OSError, json.JSONDecodeError, ValidationFailure) as exc:
+        raise PublicationFailure(
+            f"Invalid operational clock telemetry: {producer_id}"
+        ) from exc
 
 
 def _validate_event_index(path: Path, *, run_id: str, producer_id: str, clock_domains: set[str], artifact_ids: set[str]) -> tuple[int, dict[str, Any]]:
@@ -107,10 +132,22 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
     ssb_summary = None
     if (
         plan.profile.experiment_type
-        in {"wifi_link_smoke", "nosync_passive_hardware_smoke"}
+        in {"wifi_link_smoke", "nosync_passive_hardware_smoke", "nosync_passive"}
         and producer_id == "rx_wifi"
     ):
-        wifi_summary = validate_wifi_smoke_outputs(plan.run_dir, int(plan.parameters["num_beacons"]))
+        wifi_summary = validate_wifi_smoke_outputs(
+            plan.run_dir,
+            int(plan.parameters["num_beacons"]),
+            minimum_ratio=float(
+                plan.parameters.get("minimum_wifi_reception_ratio", 0.8)
+            ),
+            maximum_consecutive_loss=plan.parameters.get(
+                "maximum_consecutive_wifi_loss"
+            ),
+            require_device_timestamps=(
+                plan.profile.experiment_type == "nosync_passive"
+            ),
+        )
     if (
         plan.profile.experiment_type
         in {"ssb_rx_smoke", "nosync_passive_hardware_smoke"}
@@ -121,6 +158,35 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
             _ssb_validation_duration(state, plan.profile.experiment_type),
             float(plan.parameters["min_valid_ssb_rate_hz"]),
         )
+    if (
+        plan.profile.experiment_type == "nosync_passive"
+        and producer_id == "rx_5g"
+    ):
+        ssb_summary = validate_5g_outputs(
+            plan.run_dir,
+            duration_s=_ssb_validation_duration(
+                state, plan.profile.experiment_type
+            ),
+            minimum_valid_ratio=float(
+                plan.parameters["minimum_5g_valid_ratio"]
+            ),
+            minimum_valid_rate_hz=float(
+                plan.parameters["min_valid_ssb_rate_hz"]
+            ),
+        )
+    if (
+        plan.profile.experiment_type == "nosync_passive"
+        and producer_id == "tx_wifi"
+    ):
+        validate_n310_outputs(
+            plan.run_dir,
+            int(plan.parameters["num_beacons"]),
+        )
+    if (
+        plan.profile.experiment_type == "nosync_passive"
+        and definition.role == "receiver"
+    ):
+        _validate_operational_time_artifacts(plan.run_dir, producer_id)
     records = []
     expected_by_id = {a.artifact_id: a for a in definition.expected_artifacts}
     for expected in definition.expected_artifacts:
@@ -141,6 +207,10 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
             if record["artifact_type"] == "5g_ssb_rxgrid_rows":
                 record["row_count"] = ssb_summary["valid_grids"]
                 record["schema_ref"] = SSB_ROW_SCHEMA_REF
+                validate_document(record, "artifact")
+            elif record["artifact_type"] == "5g_hssb_rows":
+                record["row_count"] = ssb_summary["valid_grids"]
+                record["schema_ref"] = "urn:sync:schema:v1:5g-hssb-row"
                 validate_document(record, "artifact")
     event_count = 0
     by_clock: dict[str, Any] = {}
@@ -289,7 +359,13 @@ def _publish_session_locked(plan: ExecutionPlan, store: StateStore, *, repo_root
             "roles": [{"producer_id": p.definition.producer_id, "node_id": p.definition.node_id, "role": p.definition.role, "modality": p.definition.modality} for p in plan.processes.values()],
             "clock_domains": list(plan.profile.clock_domains),
             "clock_relationships": list(plan.profile.clock_relationships),
-            "dataset_qualification": "integration_smoke" if plan.profile.experiment_type in HARDWARE_SMOKE_TYPES else "framework_validation",
+            "dataset_qualification": (
+                "raw_experiment"
+                if plan.profile.experiment_type == "nosync_passive"
+                else "integration_smoke"
+                if plan.profile.experiment_type in HARDWARE_SMOKE_TYPES
+                else "framework_validation"
+            ),
             "timestamp_semantics": (
                 "native_receiver_fields_unverified_no_canonical_events"
                 if plan.profile.experiment_type == "wifi_link_smoke"
@@ -297,12 +373,17 @@ def _publish_session_locked(plan: ExecutionPlan, store: StateStore, *, repo_root
                 if plan.profile.experiment_type == "ssb_rx_smoke"
                 else "independent_5g_host_serialization_and_wifi_host_delivery_operational_only_no_canonical_events_no_cross_band_pairing"
                 if plan.profile.experiment_type == "nosync_passive_hardware_smoke"
+                else "canonical_local_usrp_ticks_per_receiver_not_cross_comparable_host_ntp_projection_operational_only_no_pairing_in_raw_manifest"
+                if plan.profile.experiment_type == "nosync_passive"
                 else "profile_defined"
             ),
             "producers": producer_refs,
             "inference_runs": [],
         }
-        if plan.profile.experiment_type == "nosync_passive_hardware_smoke":
+        if plan.profile.experiment_type in {
+            "nosync_passive_hardware_smoke",
+            "nosync_passive",
+        }:
             if state.get("operational_window") is None:
                 raise PublicationFailure("Combined hardware smoke lacks its operational window")
             session["operational_window"] = state["operational_window"]

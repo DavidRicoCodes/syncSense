@@ -224,7 +224,10 @@ def test_nfs_fake_precheck_bootstrap_and_verify(tmp_path, monkeypatch):
     mount_info = {"source": "10.0.0.5:/", "fstype": "nfs4", "options": "rw,hard,nosuid,nodev,noexec,relatime"}
     monkeypatch.setattr("sync_framework.nfs._mount_info", lambda endpoint, mount: mount_info)
 
+    remote_calls = []
+
     def fake_remote(ssh, argv, **kwargs):
+        remote_calls.append(argv)
         if argv[:2] == ["python3", "-c"]:
             remote = Path(argv[-2])
             local = inventory.storage_root / remote.name
@@ -239,9 +242,15 @@ def test_nfs_fake_precheck_bootstrap_and_verify(tmp_path, monkeypatch):
     verified = verify_nfs(inventory, endpoints=endpoints)
     assert verified["nodes"][0]["node_id"] == "pc1"
     monkeypatch.setattr("sync_framework.nfs.verify_nfs", lambda inv, endpoints=None: verified)
+    mount_info["options"] = "rw,hard"
     result = bootstrap_nfs(inventory)
     assert result["status"] == "ready" and result["mutating"] is True
     assert any("exportfs" in call for call in local_calls)
+    assert any(
+        argv[:4] == ["sudo", "-n", "mount", "-o"]
+        and argv[4].startswith("remount,")
+        for argv in remote_calls
+    )
 
 
 def test_nfs_internal_prechecks_packages_export_and_teardown(tmp_path, monkeypatch):

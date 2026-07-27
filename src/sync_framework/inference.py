@@ -33,6 +33,26 @@ class DummyBatchModelAdapter:
         manifest_path = run_dir / request["session_manifest_path"]
         if manifest["state"] != "COMPLETE" or sha256_file(manifest_path) != request["session_manifest_sha256"]:
             raise InferenceFailure("Dummy inference requires the exact verified COMPLETE manifest")
+        association_summary = None
+        if request.get("derived_input"):
+            derived = request["derived_input"]
+            association_manifest_path = run_dir / derived["manifest_path"]
+            if (
+                sha256_file(association_manifest_path)
+                != derived["manifest_sha256"]
+            ):
+                raise InferenceFailure("Association manifest checksum mismatch")
+            association_manifest = json.loads(
+                association_manifest_path.read_text(encoding="utf-8")
+            )
+            validate_document(association_manifest, "association-manifest")
+            association_dir = association_manifest_path.parent
+            for item in association_manifest["files"]:
+                if sha256_file(association_dir / item["path"]) != item["sha256"]:
+                    raise InferenceFailure("Association closure checksum mismatch")
+            association_summary = json.loads(
+                (association_dir / "summary.json").read_text(encoding="utf-8")
+            )
         output_dir = run_dir / request["output_directory"]
         before = sha256_file(manifest_path)
         started = utc_now()
@@ -116,6 +136,33 @@ class DummyBatchModelAdapter:
                 "fusion_performed": False,
                 "clock_relation": "not_comparable",
             }
+        elif manifest["profile"]["profile_id"] == "nosync_passive":
+            requested = int(manifest["parameters"]["num_beacons"])
+            received = next(
+                int(artifact["row_count"])
+                for producer in producer_manifests
+                if producer["producer_id"] == "rx_wifi"
+                for artifact in producer["artifacts"]
+                if artifact["artifact_type"] == "wifi_csi_feature_rows"
+            )
+            ssb_rows = next(
+                int(artifact["row_count"])
+                for producer in producer_manifests
+                if producer["producer_id"] == "rx_5g"
+                for artifact in producer["artifacts"]
+                if artifact["artifact_type"] == "5g_hssb_rows"
+            )
+            summary["nosync_passive"] = {
+                "beacons_requested": requested,
+                "wifi_frames_received": received,
+                "wifi_frames_lost": requested - received,
+                "wifi_receive_ratio": received / requested,
+                "valid_ssb_grids": ssb_rows,
+                "association": association_summary,
+                "simulation": True,
+                "classification_performed": False,
+                "clock_relation": "not_comparable",
+            }
         summary_path = output_dir / "summary.json"
         atomic_write_json(summary_path, summary)
         artifact = {
@@ -133,14 +180,24 @@ class DummyBatchModelAdapter:
             "run_id": manifest["run_id"], "status": "SUCCEEDED",
             "adapter": {"adapter_id": self.adapter_id, "adapter_version": self.adapter_version},
             "started_at": started, "finished_at": utc_now(),
-            "inputs": ["manifest.json"], "outputs": ["summary.json"],
+            "inputs": [
+                "manifest.json",
+                *(
+                    [request["derived_input"]["manifest_path"]]
+                    if request.get("derived_input")
+                    else []
+                ),
+            ],
+            "outputs": ["summary.json"],
             "artifacts": [artifact], "error": None,
         }
         validate_document(result, "batch-model-result")
         return result
 
 
-def run_dummy_inference(run_dir: Path) -> dict[str, Any]:
+def run_dummy_inference(
+    run_dir: Path, association_id: str | None = None
+) -> dict[str, Any]:
     manifest = verify_published_manifest(run_dir)
     inference_id = generate_inference_id()
     relative_output = f"inference/{inference_id}"
@@ -154,6 +211,21 @@ def run_dummy_inference(run_dir: Path) -> dict[str, Any]:
         "adapter": {"adapter_id": adapter.adapter_id, "adapter_version": adapter.adapter_version, "config_digest": config_digest},
         "output_directory": relative_output,
     }
+    if association_id:
+        association_path = (
+            run_dir / "associations" / association_id / "manifest.json"
+        )
+        if not association_path.is_file():
+            raise InferenceFailure(
+                f"Association is not COMPLETE: {association_id}"
+            )
+        request["derived_input"] = {
+            "kind": "association",
+            "manifest_path": (
+                f"associations/{association_id}/manifest.json"
+            ),
+            "manifest_sha256": sha256_file(association_path),
+        }
     validate_document(request, "batch-model-request")
     atomic_write_json(output_dir / "request.json", request)
     atomic_write_json(output_dir / "state.json", {"inference_id": inference_id, "run_id": manifest["run_id"], "status": "RUNNING", "started_at": utc_now()})

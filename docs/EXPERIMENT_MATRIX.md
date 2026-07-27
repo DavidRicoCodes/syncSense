@@ -13,11 +13,13 @@ Este documento estructura los casos definidos en `ProjectDescription.md`. No con
 | PC5 | Orquestación, destino de datos y ejecución del modelo externo para fusión/inferencia. |
 | X410 | Sustitución física conjunta de los roles RX lógicos PC3 y PC4 en recepción sincronizada. |
 
+Para `nosync_passive` solamente, el despliegue físico actual reasigna esos roles: PC1 es RX 5G, PC2 es RX WiFi y PC3PC4 es TX WiFi N310. Los otros experimentos conservan las convenciones anteriores.
+
 ## Resumen
 
 | Experimento | Fuente 5G | Fuente WiFi | Recepción | Sincronización prevista | Estado actual |
 |---|---|---|---|---|---|
-| `nosync_passive` | 5G comercial, SSB | PC2, beacons WiFi | PC3 + PC4 separados | Ninguna; combinación aproximada en PC5 | Smoke conjunto validado live con dos B210 no comparables; timestamps canónicos pendientes |
+| `nosync_passive` | 5G comercial, SSB | PC3PC4, beacons WiFi N310 | PC1 RX 5G + PC2 RX WiFi | Ninguna; asociación NTP operacional opcional en PC5 | Framework raw y timestamps USRP implementados; aceptación hardware escalonada pendiente |
 | `nosync_active` | PC1, BF-like 5G | PC2, BF WiFi | PC3 + PC4 separados | Ninguna; combinación aproximada en PC5 | Señales activas todavía en desarrollo |
 | `sync_reception_passive` | 5G comercial, SSB | PC2, beacons WiFi | Dos canales del X410 | Reloj de recepción común y timestamps de dispositivo | Captura X410 prototipo; integración y dataset conjunto pendientes |
 | `sync_reception_active` | PC1, BF-like 5G | PC2, BF WiFi | Dos canales del X410 | Reloj de recepción común y timestamps de dispositivo | Depende de RX X410 integrado y señales activas pendientes |
@@ -26,9 +28,9 @@ Este documento estructura los casos definidos en `ProjectDescription.md`. No con
 
 ## 1. `nosync_passive`
 
-El 5G comercial transmite SSBs y PC3 ejecuta el receptor 5G. PC2 transmite beacons WiFi y PC4 ejecuta el receptor WiFi. Los dos receptores trabajan sin una referencia temporal compartida y transmiten sus resultados a PC5 en modo *best effort*. La fusión futura asumirá de forma aproximada que los datos recibidos juntos corresponden a instantes próximos.
+El 5G comercial transmite SSBs y PC1 ejecuta el receptor 5G. PC3PC4 transmite beacons WiFi con un N310 y PC2 ejecuta el receptor WiFi. Los B210 de PC1 y PC2 reinician épocas UHD locales independientes y no comparten PPS, 10 MHz, tiempo ni coherencia de fase.
 
-Corrección confirmada: PC2 transmite **beacons WiFi**, no SSBs.
+Cada evento conserva los ticks exactos de su USRP local: comienzo del bloque más offset del detector. PC5 publica primero un dataset raw sin pares. Un adaptador `nearest-ntp` separado puede proyectar observaciones a UTC desde anchors monotónicos/realtime y telemetría NTP, pero el resultado se etiqueta como asociación operacional aproximada y nunca como alineación de adquisición.
 
 ## 2. `nosync_active`
 

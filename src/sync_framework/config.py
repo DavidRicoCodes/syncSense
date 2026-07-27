@@ -156,5 +156,17 @@ def resolve_parameters(profile: ExperimentProfile, supplied: dict[str, str]) -> 
             raise ValidationFailure(f"Parameter {name} is below minimum {spec['minimum']}")
         if "maximum" in spec and value > spec["maximum"]:
             raise ValidationFailure(f"Parameter {name} is above maximum {spec['maximum']}")
+        if "enum" in spec and value not in spec["enum"]:
+            raise ValidationFailure(
+                f"Parameter {name} must be one of: "
+                + ", ".join(str(item) for item in spec["enum"])
+            )
         resolved[name] = value
+    if profile.experiment_type == "nosync_passive":
+        from .nosync_passive import canonical_position
+
+        resolved["position"] = canonical_position(
+            str(resolved["position"]),
+            str(resolved["testbed_id"]),
+        )
     return resolved

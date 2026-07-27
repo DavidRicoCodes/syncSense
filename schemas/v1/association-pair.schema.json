@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:association-pair",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "association_id", "pair_index", "wifi", "ssb_5g", "delta_t_ms", "ssb_reused", "uncertainty_ns", "semantics"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "association_id": {"type": "string", "minLength": 1},
+    "pair_index": {"type": "integer", "minimum": 0},
+    "wifi": {"$ref": "#/$defs/member"},
+    "ssb_5g": {"$ref": "#/$defs/member"},
+    "delta_t_ms": {"type": "number"},
+    "ssb_reused": {"type": "boolean"},
+    "uncertainty_ns": {"type": "integer", "minimum": 0},
+    "semantics": {"const": "approximate_operational_ntp_association_not_acquisition_alignment"}
+  },
+  "$defs": {
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_index", "device_ticks", "tick_rate_hz", "estimated_utc_ns"],
+      "properties": {
+        "row_index": {"type": "integer", "minimum": 0},
+        "device_ticks": {"type": "integer", "minimum": 0},
+        "tick_rate_hz": {"type": "integer", "minimum": 1},
+        "estimated_utc_ns": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

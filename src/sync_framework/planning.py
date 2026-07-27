@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 from string import Formatter
@@ -13,6 +14,9 @@ from .domain import CapabilityDisabled, ExecutionPlan, ResolvedProcess, Validati
 ALLOWED_PLACEHOLDERS = {
     "run_id", "run_dir", "producer_dir", "workspace", "label", "scene", "duration_s",
     "num_beacons", "rx_quiet_s", "rx_max_drain_s", "effective_config",
+    "experiment_id", "detector_threshold", "wifi_rx_gain_db",
+    "wifi_tx_gain_db", "wifi_tx_amplitude", "wifi_tx_strategy",
+    "wifi_stream_batch_packets", "tx_start_delay_s",
 }
 
 
@@ -61,6 +65,9 @@ def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | 
             "producer_dir": str(execution_producer_dir),
             "workspace": str(node.workspace),
             "effective_config": str(execution_producer_dir / "runtime" / "effective-config.json"),
+            "experiment_id": (
+                int(hashlib.sha256((run_id or "dry-run").encode()).hexdigest()[:8], 16)
+            ),
         }
         argv = tuple(_format_value(arg, context) for arg in command.argv)
         cwd = Path(_format_value(str(command.cwd), context)).expanduser()

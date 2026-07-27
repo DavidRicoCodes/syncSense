@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:ntp-status",
+  "title": "NtpStatusV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "semantics", "samples"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "semantics": {"const": "operational_host_discipline_not_acquisition_sync"},
+    "samples": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schema_version", "phase", "observed_realtime_ns", "synchronized", "stratum", "root_delay_ms", "root_dispersion_ms", "system_jitter_ms"],
+        "properties": {
+          "schema_version": {"const": "1.0.0"},
+          "phase": {"enum": ["start", "end"]},
+          "observed_realtime_ns": {"type": "integer", "minimum": 0},
+          "synchronized": {"type": "boolean"},
+          "stratum": {"type": ["integer", "null"], "minimum": 0},
+          "root_delay_ms": {"type": ["number", "null"], "minimum": 0},
+          "root_dispersion_ms": {"type": ["number", "null"], "minimum": 0},
+          "system_jitter_ms": {"type": ["number", "null"], "minimum": 0}
+        }
+      }
+    }
+  }
+}

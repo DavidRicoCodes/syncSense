@@ -21,6 +21,16 @@
         "config_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       }
     },
-    "output_directory": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"}
+    "output_directory": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+    "derived_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "manifest_path", "manifest_sha256"],
+      "properties": {
+        "kind": {"const": "association"},
+        "manifest_path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+        "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
   }
 }

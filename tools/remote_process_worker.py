@@ -12,7 +12,6 @@ import os
 import re
 import selectors
 import signal
-import socket
 import subprocess
 import sys
 import time
@@ -40,6 +39,144 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def host_clock_anchor(phase: str) -> dict:
+    monotonic_before = time.monotonic_ns()
+    realtime_ns = time.time_ns()
+    monotonic_after = time.monotonic_ns()
+    return {
+        "schema_version": "1.0.0",
+        "phase": phase,
+        "monotonic_ns": (monotonic_before + monotonic_after) // 2,
+        "realtime_ns": realtime_ns,
+        "sampling_uncertainty_ns": monotonic_after - monotonic_before,
+        "semantics": "operational_host_clock_anchor_not_acquisition_time",
+    }
+
+
+def ntp_snapshot(phase: str) -> dict:
+    synchronized = False
+    try:
+        result = subprocess.run(
+            ["timedatectl", "show", "-p", "NTPSynchronized", "--value"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode == 0:
+            synchronized = result.stdout.strip().lower() == "yes"
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    values = {
+        "stratum": None,
+        "root_delay_ms": None,
+        "root_dispersion_ms": None,
+        "system_jitter_ms": None,
+    }
+    try:
+        chrony = subprocess.run(
+            ["chronyc", "-c", "tracking"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if chrony.returncode == 0:
+            fields = chrony.stdout.strip().split(",")
+            try:
+                values.update(
+                    {
+                        "stratum": int(fields[2]),
+                        "root_delay_ms": float(fields[10]) * 1000.0,
+                        "root_dispersion_ms": float(fields[11]) * 1000.0,
+                        "system_jitter_ms": abs(float(fields[6])) * 1000.0,
+                    }
+                )
+            except (IndexError, ValueError):
+                pass
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return {
+        "schema_version": "1.0.0",
+        "phase": phase,
+        "observed_realtime_ns": time.time_ns(),
+        "synchronized": synchronized,
+        **values,
+    }
+
+
+def atomic_jsonl(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(".%s.tmp.%d" % (path.name, os.getpid()))
+    with temporary.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")))
+            handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
+def build_events(spec: dict, output: Path) -> None:
+    contract = spec.get("event_contract")
+    if not contract:
+        return
+    source = output / contract["source_path"]
+    rows = source.read_bytes()
+    if rows and not rows.endswith(b"\n"):
+        raise ValueError("event source has a truncated final line")
+    events = []
+    last_ticks = -1
+    for row_index, encoded in enumerate(rows.splitlines()):
+        row = json.loads(encoded)
+        block_ticks = row[contract["block_ticks_field"]]
+        offset = row[contract["offset_field"]]
+        ticks = row[contract["event_ticks_field"]]
+        rate = row[contract["tick_rate_field"]]
+        if (
+            not all(
+                isinstance(value, int) and not isinstance(value, bool)
+                for value in (block_ticks, offset, ticks, rate)
+            )
+            or min(block_ticks, offset, ticks) < 0
+            or rate < 1
+            or ticks != block_ticks + offset
+            or ticks < last_ticks
+        ):
+            raise ValueError("invalid canonical device timestamp in event source")
+        last_ticks = ticks
+        events.append(
+            {
+                "schema_version": "1.0.0",
+                "run_id": spec["run_id"],
+                "event_id": "%s_%08d" % (spec["producer_id"], row_index),
+                "producer_id": spec["producer_id"],
+                "sequence": row_index,
+                "modality": contract["modality"],
+                "frame_type": contract["frame_type"],
+                "clock_domain_id": contract["clock_domain_id"],
+                "timestamp": {"ticks": ticks, "tick_rate_hz": rate},
+                "reference_point": contract["reference_point"],
+                "detector": {
+                    "block_start_ticks": block_ticks,
+                    "offset_samples": offset,
+                    "sample_rate_hz": rate,
+                    "uncertainty_ticks": contract.get("uncertainty_ticks", 1),
+                },
+                "capture_discontinuity": {"present": False},
+                "artifact_ref": {
+                    "artifact_id": contract["artifact_id"],
+                    "row_index": row_index,
+                },
+            }
+        )
+    atomic_jsonl(output / contract["output_path"], events)
 
 
 def start_ticks(pid: int) -> int:
@@ -73,7 +210,11 @@ def run_worker(encoded: str) -> int:
     output.mkdir(parents=True, exist_ok=True)
     runtime.mkdir(exist_ok=True)
     pid = os.getpid()
-    identity = {"pid": pid, "proc_start_ticks": start_ticks(pid), "host": socket.gethostname()}
+    identity = {
+        "pid": pid,
+        "proc_start_ticks": start_ticks(pid),
+        "host": spec["node_id"],
+    }
     atomic_json(runtime / "process.json", identity)
     log_path = output / "process.log"
     stopping = False
@@ -94,6 +235,32 @@ def run_worker(encoded: str) -> int:
     env = os.environ.copy()
     env.update({str(k): str(v) for k, v in spec.get("env", {}).items()})
     started_at = utc_now()
+    clock_anchors = (
+        [host_clock_anchor("start")]
+        if spec.get("capture_host_time")
+        else []
+    )
+    ntp_samples = (
+        [ntp_snapshot("start")]
+        if spec.get("capture_host_time")
+        else []
+    )
+    if spec.get("capture_host_time"):
+        first = clock_anchors[0]
+        atomic_json(
+            runtime / "clock-anchor.json",
+            {
+                "schema": "rx_host_clock_anchor_v1",
+                "monotonic_ns": first["monotonic_ns"],
+                "realtime_ns": first["realtime_ns"],
+                "unix_minus_monotonic_ns": (
+                    first["realtime_ns"] - first["monotonic_ns"]
+                ),
+                "sampling_uncertainty_ns": first[
+                    "sampling_uncertainty_ns"
+                ],
+            },
+        )
     ready_regex = spec.get("readiness_regex")
     ready = False
     with log_path.open("w", encoding="utf-8", buffering=1) as log:
@@ -125,6 +292,20 @@ def run_worker(encoded: str) -> int:
         for line in child.stdout:
             log.write(line)
         code = child.wait()
+    if spec.get("capture_host_time"):
+        clock_anchors.append(host_clock_anchor("end"))
+        ntp_samples.append(ntp_snapshot("end"))
+        atomic_jsonl(output / "host-clock-anchors.jsonl", clock_anchors)
+        atomic_json(
+            output / "ntp-status.json",
+            {
+                "schema_version": "1.0.0",
+                "semantics": "operational_host_discipline_not_acquisition_sync",
+                "samples": ntp_samples,
+            },
+        )
+    if code == 0:
+        build_events(spec, output)
     artifacts = []
     for relative in spec["artifacts"]:
         path = output / relative

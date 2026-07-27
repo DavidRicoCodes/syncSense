@@ -1,0 +1,129 @@
+schema_version: 1.0.0
+inventory_id: pc5_nosync_passive_example
+storage:
+  backend: nfs
+  root: /srv/sync-experiments
+  client_mount: /mnt/sync-experiments
+nodes:
+  - node_id: pc1
+    transport: ssh
+    workspace: /path/to/syncSense
+    ssh: {host: pc1}
+    commands:
+      - command_id: nosync_5g_rx
+        argv:
+          - "{workspace}/modulos_rx_tx/.venv_uhd/bin/python"
+          - -u
+          - -m
+          - src.python.fusion_dataset.online_5g_hssb_jsonl_parallel
+          - --serial
+          - REPLACE_5G_RX_SERIAL_IN_LOCAL_INVENTORY
+          - --freq
+          - "3541.44e6"
+          - --rate
+          - "15.36e6"
+          - --gain
+          - "60"
+          - --duration-ms
+          - "20"
+          - --force-nid2
+          - "0"
+          - --force-ibar-ssb
+          - "0"
+          - --enable-cfo-correction
+          - --cfo-warmup-iters
+          - "30"
+          - --cfo-correction-sign
+          - "-1"
+          - --duration-s
+          - "3600"
+          - --clock-anchor
+          - "{producer_dir}/runtime/clock-anchor.json"
+          - --output-jsonl
+          - "{producer_dir}/hssb.jsonl"
+          - --output-rxgrid-cf32
+          - "{producer_dir}/rxgrid.cf32"
+          - --output-hssb-cf32
+          - "{producer_dir}/hssb.cf32"
+          - --processing-workers
+          - "2"
+          - --truncate-output
+        cwd: "{workspace}/modulos_rx_tx"
+        env:
+          PYTHONPATH: "{workspace}/modulos_rx_tx:/usr/local/lib/python3.10/site-packages"
+        safety_class: dsp
+  - node_id: pc2
+    transport: ssh
+    workspace: /path/to/syncSense
+    ssh: {host: pc2}
+    commands:
+      - command_id: nosync_wifi_rx
+        argv:
+          - stdbuf
+          - -oL
+          - -eL
+          - "{workspace}/modulos_rx_tx/build/cpp/online_waveform_pipeline"
+          - --config
+          - "{effective_config}"
+        cwd: "{workspace}/modulos_rx_tx"
+        env:
+          SYNC_WIFI_RX_DEVICE_ARGS: serial=REPLACE_WIFI_RX_SERIAL_IN_LOCAL_INVENTORY
+        safety_class: dsp
+  - node_id: pc3pc4
+    transport: ssh
+    workspace: /path/to/syncSense
+    ssh: {host: pc3pc4}
+    commands:
+      - command_id: nosync_n310_tx
+        argv:
+          - "{workspace}/modulos_rx_tx/.venv_uhd/bin/python"
+          - -u
+          - -m
+          - src.python.wifi_sensing.tx_wifi_usrp
+          - --mode
+          - beacon
+          - --device-args
+          - type=n3xx,addr=REPLACE_N310_DATA_ADDRESS,master_clock_rate=122.88e6
+          - --freq
+          - "2.462e9"
+          - --rate
+          - "20e6"
+          - --hardware-rate
+          - "20.48e6"
+          - --bandwidth
+          - "20e6"
+          - --skip-bandwidth-setting
+          - --gain
+          - "{wifi_tx_gain_db}"
+          - --channel
+          - "0"
+          - --amplitude
+          - "{wifi_tx_amplitude}"
+          - --wifi-channel
+          - "11"
+          - --ssid
+          - USRP_CHANNEL11
+          - --bssid
+          - "02:11:22:33:44:55"
+          - --beacon-interval-tu
+          - "100"
+          - --num-packets
+          - "{num_beacons}"
+          - --experiment-id
+          - "{experiment_id}"
+          - --transmitter-id
+          - "1"
+          - --tx-strategy
+          - "{wifi_tx_strategy}"
+          - --stream-batch-packets
+          - "{wifi_stream_batch_packets}"
+          - --start-delay-sec
+          - "{tx_start_delay_s}"
+          - --save-first-npz
+          - "{producer_dir}/first-packet.npz"
+          - --local-json
+          - "{producer_dir}/state.json"
+        cwd: "{workspace}/modulos_rx_tx"
+        env:
+          PYTHONPATH: "{workspace}/modulos_rx_tx:/usr/local/lib/python3.10/site-packages"
+        safety_class: rf

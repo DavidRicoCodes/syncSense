@@ -17,8 +17,8 @@ MEMORY_MARGIN_BYTES = 2 * 1024**3
 CSI_ELEMENTS_PER_FRAME = 52
 
 
-def required_frames(num_beacons: int) -> int:
-    return math.ceil(num_beacons * 0.8)
+def required_frames(num_beacons: int, minimum_ratio: float = 0.8) -> int:
+    return math.ceil(num_beacons * minimum_ratio)
 
 
 def tx_buffer_bytes(num_beacons: int) -> int:
@@ -90,7 +90,14 @@ def _zero_summary_value(log: str, label: str) -> None:
         raise PublicationFailure(f"RX summary does not prove zero {label.lower()}")
 
 
-def validate_wifi_smoke_outputs(run_dir: Path, num_beacons: int) -> dict[str, Any]:
+def validate_wifi_smoke_outputs(
+    run_dir: Path,
+    num_beacons: int,
+    *,
+    minimum_ratio: float = 0.8,
+    maximum_consecutive_loss: int | None = None,
+    require_device_timestamps: bool = False,
+) -> dict[str, Any]:
     rx_dir = run_dir / "rx_wifi"
     tx_dir = run_dir / "tx_wifi"
     rows = _read_complete_json_lines(rx_dir / "features.jsonl")
@@ -111,6 +118,24 @@ def validate_wifi_smoke_outputs(run_dir: Path, num_beacons: int) -> dict[str, An
             raise PublicationFailure(f"Invalid sample_offset in WiFi row {index}")
         if not isinstance(features, list) or len(features) != CSI_ELEMENTS_PER_FRAME:
             raise PublicationFailure(f"WiFi row {index} must contain 52 complex features")
+        if require_device_timestamps:
+            exact = (
+                row.get("has_rx_device_time") is True
+                and isinstance(row.get("rx_block_start_ticks"), int)
+                and isinstance(row.get("rx_timestamp_ticks"), int)
+                and isinstance(row.get("rx_tick_rate_hz"), int)
+                and row["rx_tick_rate_hz"] == round(row.get("sample_rate_hz", 0))
+                and row["rx_timestamp_ticks"]
+                == row["rx_block_start_ticks"]
+                + (
+                    row["sample_offset"]
+                    - frame_timings[index - 1].get("block_first_sample", -1)
+                )
+            )
+            if not exact:
+                raise PublicationFailure(
+                    f"WiFi row {index} lacks an exact canonical UHD timestamp"
+                )
         for feature in features:
             if (
                 not isinstance(feature, dict)
@@ -149,11 +174,37 @@ def validate_wifi_smoke_outputs(run_dir: Path, num_beacons: int) -> dict[str, An
             raise PublicationFailure(f"Frame timing counter mismatch in row {index}")
         if timing.get("sample_offset") != feature.get("sample_offset"):
             raise PublicationFailure(f"Frame timing sample offset mismatch in row {index}")
-        if timing.get("radio_time_semantics") != (
+        allowed_semantics = {
             "estimated_from_block_end_host_delivery_and_sample_"
-            "offset_includes_usb_host_delivery_uncertainty"
-        ):
+            "offset_includes_usb_host_delivery_uncertainty",
+            "host_operational_estimate_only_includes_usb_delivery_"
+            "uncertainty_not_acquisition_alignment",
+        }
+        if timing.get("radio_time_semantics") not in allowed_semantics:
             raise PublicationFailure(f"Invalid frame timing semantics in row {index}")
+        if require_device_timestamps:
+            required_exact = {
+                "has_rx_device_time": True,
+                "block_start_device_ticks": feature["rx_block_start_ticks"],
+                "event_device_ticks": feature["rx_timestamp_ticks"],
+                "device_tick_rate_hz": feature["rx_tick_rate_hz"],
+                "reference_point": "wifi_ppdu_start",
+                "canonical_timestamp_semantics": (
+                    "local_usrp_device_time_first_sample_plus_"
+                    "detector_offset_samples"
+                ),
+                "event_monotonic_semantics": (
+                    "operational_host_estimate_only_not_acquisition_time"
+                ),
+            }
+            if any(timing.get(key) != value for key, value in required_exact.items()):
+                raise PublicationFailure(
+                    f"WiFi frame timing row {index} does not close canonical time"
+                )
+            if not isinstance(timing.get("event_monotonic_ns"), int):
+                raise PublicationFailure(
+                    f"WiFi frame timing row {index} lacks operational event time"
+                )
         for field in frame_timing_fields:
             _validate_timing_value(timing, field, row_number=index, description="frame timing")
         if timing["output_total_us"] < timing["json_write_us"] or timing["output_total_us"] < timing["csi_write_us"]:
@@ -188,9 +239,33 @@ def validate_wifi_smoke_outputs(run_dir: Path, num_beacons: int) -> dict[str, An
             raise PublicationFailure(f"Inconsistent block timings in row {index}")
     if counters != sorted(set(counters)):
         raise PublicationFailure("WiFi packet counters must be unique and strictly increasing")
-    minimum = required_frames(num_beacons)
+    minimum = required_frames(num_beacons, minimum_ratio)
     if len(rows) < minimum:
-        raise PublicationFailure(f"WiFi reception below 80%: {len(rows)} < {minimum}")
+        raise PublicationFailure(
+            f"WiFi reception below required ratio: {len(rows)} < {minimum}"
+        )
+    losses = [
+        counter
+        for counter in range(num_beacons)
+        if counter not in set(counters)
+    ]
+    longest_loss = 0
+    current_loss = 0
+    missing = set(losses)
+    for counter in range(num_beacons):
+        if counter in missing:
+            current_loss += 1
+            longest_loss = max(longest_loss, current_loss)
+        else:
+            current_loss = 0
+    if (
+        maximum_consecutive_loss is not None
+        and longest_loss > maximum_consecutive_loss
+    ):
+        raise PublicationFailure(
+            "WiFi consecutive-loss limit exceeded: "
+            f"{longest_loss} > {maximum_consecutive_loss}"
+        )
     csi_path = rx_dir / "csi.cf32"
     expected_size = len(rows) * CSI_ELEMENTS_PER_FRAME * COMPLEX64_BYTES
     if not csi_path.is_file() or csi_path.stat().st_size != expected_size:
@@ -212,6 +287,7 @@ def validate_wifi_smoke_outputs(run_dir: Path, num_beacons: int) -> dict[str, An
         "frames_required": minimum,
         "frames_lost": num_beacons - len(rows),
         "receive_ratio": len(rows) / num_beacons,
+        "maximum_consecutive_loss": longest_loss,
         "first_counter": counters[0] if counters else None,
         "last_counter": counters[-1] if counters else None,
         "frame_timing_rows": len(frame_timings),

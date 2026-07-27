@@ -29,7 +29,7 @@
       "properties": {"inventory_id": {"type": "string"}, "digest": {"$ref": "#/$defs/digest"}}
     },
     "parameters": {"type": "object"},
-    "dataset_qualification": {"enum": ["integration_smoke", "framework_validation"]},
+    "dataset_qualification": {"enum": ["integration_smoke", "framework_validation", "raw_experiment"]},
     "timestamp_semantics": {"type": "string", "minLength": 1},
     "operational_window": {
       "type": "object",

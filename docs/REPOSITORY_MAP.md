@@ -24,14 +24,14 @@ SYNC/
 └── rx_sync/                    # Submódulo de pruebas multibanda X410
 ```
 
-El paquete padre implementa validación de contratos, procesos locales, SSH con capacidades explícitas, estado atómico, supervisión foreground, NFSv4 explícito, publicación, recuperación e inferencia dummy. `wifi_link_smoke`, `ssb_rx_smoke` y el conjunto `nosync_passive_hardware_smoke` habilitan DSP/hardware solo con sus flags de autorización; las pruebas automáticas siguen usando dobles. Los workers distribuidos viven en `tools/` y se ejecutan desde clones Git sin instalar el paquete en los clientes.
+El paquete padre implementa validación de contratos, procesos locales, SSH con capacidades explícitas, estado atómico, supervisión foreground, NFSv4 explícito, publicación, recuperación e inferencia dummy. `nosync_passive` añade publicación raw con eventos USRP locales y asociaciones `nearest-ntp` derivadas e independientes. Todos los perfiles hardware habilitan DSP/RF solo con sus flags de autorización; las pruebas automáticas siguen usando dobles. Los workers distribuidos viven en `tools/` y se ejecutan desde clones Git sin instalar el paquete en los clientes.
 
 Los archivos locales `AGENTS.md` y `.codex/*` existen para mantener continuidad durante el desarrollo, pero están ignorados deliberadamente y no forman parte del producto versionado. `.codex/HANDOFF.md` es el punto de entrada para trasladar el workspace a PC5 y retomarlo sin el chat original.
 
 ## Submódulo `modulos_rx_tx`
 
 - Origen: `https://github.com/ammendezuc3m/DT_sensing_fusion_WIFI5G.git`
-- Revisión fijada actual: `84d9f389998e6cbc0d8762397f566a744899100c`
+- Revisión fijada actual: `dcdd6cb35709010d8593e2dc12f33192879e099d`
 
 Capacidades observadas:
 
@@ -41,13 +41,16 @@ Capacidades observadas:
 - Generación y transmisión de beacons 802.11a/g mediante USRP.
 - Recepción WiFi, seguimiento L-LTF y extracción de CSI.
 - Trazas opcionales de latencia operacional WiFi por bloque y frame, sin semántica de timestamp RF.
+- Receptor paralelo 5G que conserva el `RXMetadata.time_spec` del primer sample de cada bloque, publica `rxGrid`/HSSB binarios y referencia cada fila con ticks exactos del USRP.
+- TX WiFi N310 finito con estrategias temporizada y por lotes, estado de cierre y diagnóstico de eventos asíncronos.
+- Módulos BF-like, Doppler, RTC-SI y utilidades de fusión recuperados del trabajo de laboratorio; se preservan, pero no forman parte todavía del recorrido del framework ni sustituyen el modelo externo.
 - Salidas H5, CSV, JSON de estado e integración experimental mediante SCP.
 - Material MATLAB histórico o de validación junto al flujo Python recomendado.
 
 Limitaciones relevantes para el proyecto padre:
 
-- Los timestamps 5G online actuales representan principalmente el momento de procesamiento/escritura en el host, no una referencia común de llegada entre PCs.
-- El receptor WiFi conserva tiempo de host aproximado y tiempo local del USRP, pero ese reloj se reinicia de forma independiente.
+- El smoke 5G antiguo conserva timestamps de host operacionales; el nuevo receptor paralelo sí publica ticks USRP canónicos locales.
+- El receptor WiFi conserva ticks locales del USRP y tiempo de host operacional, pero su época se reinicia de forma independiente a la de 5G.
 - Los transmisores y receptores activos BF/BF-like no están todos terminados.
 
 ## Submódulo `rx_sync`
@@ -70,6 +73,6 @@ Limitaciones relevantes:
 ## Fronteras de responsabilidad
 
 - Cada submódulo mantiene su propio historial, dependencias, documentación y política de datos generados.
-- El repositorio padre coordina productores simulados, los smokes hardware por banda y un smoke conjunto no sincronizado sin copiar ni absorber la lógica DSP de los hijos.
+- El repositorio padre coordina productores simulados, smokes y el `nosync_passive` físico sin copiar ni absorber la lógica DSP de los hijos.
 - Cambiar una interfaz o script de un submódulo requiere una necesidad concreta y aprobación previa.
 - Datasets, capturas, estados de ejecución, credenciales y contexto de agentes no se versionan en el padre.

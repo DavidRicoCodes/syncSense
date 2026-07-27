@@ -51,6 +51,11 @@ class InferenceFailure(SyncError):
     exit_code = 7
 
 
+class AssociationFailure(SyncError):
+    code = "ASSOCIATION_FAILED"
+    exit_code = 8
+
+
 @dataclass(frozen=True)
 class CommandSpec:
     command_id: str

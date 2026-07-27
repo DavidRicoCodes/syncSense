@@ -165,6 +165,21 @@ def bootstrap_nfs(inventory: Inventory) -> dict[str, Any]:
             ], timeout=60)
         elif info.get("source") != expected or not str(info.get("fstype", "")).startswith("nfs"):
             raise ProcessFailure(f"Unexpected existing mount on {endpoint.node_id}: {info}")
+        elif not MOUNT_OPTIONS.issubset(
+            set(str(info.get("options", "")).split(","))
+        ):
+            run_ssh(
+                endpoint.ssh,
+                [
+                    "sudo",
+                    "-n",
+                    "mount",
+                    "-o",
+                    "remount," + ",".join(sorted(MOUNT_OPTIONS)),
+                    str(inventory.client_mount),
+                ],
+                timeout=60,
+            )
     verification = verify_nfs(inventory, endpoints=endpoints)
     return {"action": "storage_bootstrap", "status": "ready", "mutating": True, **verification}
 

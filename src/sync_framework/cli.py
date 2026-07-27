@@ -12,6 +12,7 @@ from typing import Any
 from .config import load_inventory, load_profile, resolve_parameters
 from .domain import CapabilityDisabled, SyncError, ValidationFailure
 from .inference import inference_status, run_dummy_inference
+from .association import association_status, run_nearest_ntp_association
 from .nfs import bootstrap_nfs, describe_nfs, teardown_nfs, verify_nfs
 from .orchestration import (
     finalize_run,
@@ -73,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("profile")
     run.add_argument("--param", action="append", default=[])
     run.add_argument("--inference", choices=["dummy"], required=True)
+    run.add_argument("--association", choices=["nearest-ntp"])
     run.add_argument("--allow-remote-simulation", action="store_true")
     run.add_argument("--allow-hardware-receive", action="store_true")
     run.add_argument("--allow-rf-transmit", action="store_true")
@@ -120,9 +122,24 @@ def build_parser() -> argparse.ArgumentParser:
     inference_run = inference_commands.add_parser("run")
     inference_run.add_argument("run_id")
     inference_run.add_argument("--adapter", choices=["dummy"], required=True)
+    inference_run.add_argument("--association-id")
     inference_status_parser = inference_commands.add_parser("status")
     inference_status_parser.add_argument("run_id")
     inference_status_parser.add_argument("inference_id", nargs="?")
+
+    association = commands.add_parser("association")
+    association_commands = association.add_subparsers(
+        dest="association_command", required=True
+    )
+    association_run = association_commands.add_parser("run")
+    association_run.add_argument("run_id")
+    association_run.add_argument("--adapter", choices=["nearest-ntp"], required=True)
+    association_run.add_argument(
+        "--maximum-delta-ms", type=float, default=30.0
+    )
+    association_status_parser = association_commands.add_parser("status")
+    association_status_parser.add_argument("run_id")
+    association_status_parser.add_argument("association_id", nargs="?")
     return parser
 
 
@@ -166,14 +183,36 @@ def dispatch(args: argparse.Namespace) -> tuple[Any, int]:
                       allow_hardware_receive=args.allow_hardware_receive,
                       allow_rf_transmit=args.allow_rf_transmit)
             manifest = finalize_run(plan, store, repo_root=repo_root())
-            result = run_dummy_inference(plan.run_dir)
-            return {
+            association_result = None
+            if args.association:
+                association_result = run_nearest_ntp_association(
+                    plan.run_dir,
+                    float(plan.parameters["maximum_pair_delta_ms"]),
+                )
+            result = run_dummy_inference(
+                plan.run_dir,
+                (
+                    association_result["association_id"]
+                    if association_result
+                    else None
+                ),
+            )
+            response = {
                 "run_id": plan.run_id, "dataset_state": manifest["state"],
                 "inference_id": result["inference_id"], "inference_status": result["status"],
                 "run_dir": str(plan.run_dir),
                 "manifest_path": str(plan.run_dir / "manifest.json"),
                 "inference_path": str(plan.run_dir / "inference" / result["inference_id"]),
-            }, 0
+            }
+            if association_result:
+                response.update(
+                    {
+                        "association_id": association_result["association_id"],
+                        "association_status": association_result["status"],
+                        "association_path": association_result["association_path"],
+                    }
+                )
+            return response, 0
         inventory = load_inventory(args.inventory, storage_override=args.storage_root)
         profile = load_profile(args.profile)
         parameters = resolve_parameters(profile, parse_params(args.param))
@@ -191,8 +230,18 @@ def dispatch(args: argparse.Namespace) -> tuple[Any, int]:
         inventory = load_inventory(args.inventory, storage_override=args.storage_root)
         target = run_directory(inventory.storage_root, args.run_id)
         if args.inference_command == "run":
-            return run_dummy_inference(target), 0
+            return run_dummy_inference(target, args.association_id), 0
         return inference_status(target, args.inference_id), 0
+    if args.command == "association":
+        inventory = load_inventory(
+            args.inventory, storage_override=args.storage_root
+        )
+        target = run_directory(inventory.storage_root, args.run_id)
+        if args.association_command == "run":
+            return run_nearest_ntp_association(
+                target, args.maximum_delta_ms
+            ), 0
+        return association_status(target, args.association_id), 0
     mutating_process_command = args.command in {"start", "stop", "recover"} and not getattr(args, "dry_run", False)
     allowed = {"simulation"}
     if getattr(args, "allow_remote_simulation", False): allowed.add("simulation")

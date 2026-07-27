@@ -24,6 +24,7 @@ from .run_id import generate_run_id
 from .state import StateStore, utc_now
 from .storage import atomic_write_json, create_run_layout, run_directory
 from .wifi_smoke import available_memory_bytes, global_timeout_s, required_available_memory_bytes
+from .nosync_passive import global_timeout_s as nosync_global_timeout_s
 from .processes.ssh import run_ssh
 
 
@@ -60,6 +61,41 @@ def make_process_spec(plan: ExecutionPlan, producer_id: str) -> ProcessSpec:
         })
         if resolved.definition.readiness["type"] == "stdout_regex":
             worker_config["readiness_regex"] = resolved.definition.readiness["pattern"]
+        if (
+            plan.profile.experiment_type == "nosync_passive"
+            and resolved.definition.role == "receiver"
+        ):
+            worker_config["capture_host_time"] = True
+            if producer_id == "rx_wifi":
+                worker_config["event_contract"] = {
+                    "source_path": "frame-timings.jsonl",
+                    "output_path": "events.jsonl",
+                    "artifact_id": "rx_wifi_features",
+                    "modality": "wifi",
+                    "frame_type": "wifi_beacon",
+                    "clock_domain_id": resolved.definition.clock_domain_id,
+                    "reference_point": "wifi_ppdu_start",
+                    "block_ticks_field": "block_start_device_ticks",
+                    "offset_field": "detector_offset_samples",
+                    "event_ticks_field": "event_device_ticks",
+                    "tick_rate_field": "device_tick_rate_hz",
+                    "uncertainty_ticks": 1,
+                }
+            elif producer_id == "rx_5g":
+                worker_config["event_contract"] = {
+                    "source_path": "hssb.jsonl",
+                    "output_path": "events.jsonl",
+                    "artifact_id": "rx_5g_hssb",
+                    "modality": "5g",
+                    "frame_type": "ssb",
+                    "clock_domain_id": resolved.definition.clock_domain_id,
+                    "reference_point": "ssb_pss_start",
+                    "block_ticks_field": "block_start_device_ticks",
+                    "offset_field": "detector_offset_samples",
+                    "event_ticks_field": "event_device_ticks",
+                    "tick_rate_field": "device_tick_rate_hz",
+                    "uncertainty_ticks": 1,
+                }
     return ProcessSpec(
         producer_id=producer_id, argv=resolved.argv, cwd=resolved.cwd, env=resolved.env,
         log_path=(plan.run_dir or Path(".")) / ".control" / "logs" / f"{producer_id}.log",
@@ -84,6 +120,7 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
     if plan.profile.experiment_type not in {
         "wifi_link_smoke",
         "nosync_passive_hardware_smoke",
+        "nosync_passive",
     }:
         return
     source = repo_root / "modulos_rx_tx" / "configs" / "pipelines" / "wifi_beacon_online.json"
@@ -94,6 +131,20 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
     target = plan.processes["rx_wifi"].producer_dir / "runtime" / "effective-config.json"
     execution = plan.processes["rx_wifi"].execution_producer_dir
     config["waveform_config"]["detector"]["metric_threshold"] = float(plan.parameters["detector_threshold"])
+    if plan.profile.experiment_type == "nosync_passive":
+        device_args = plan.processes["rx_wifi"].command.env.get(
+            "SYNC_WIFI_RX_DEVICE_ARGS"
+        )
+        if not device_args:
+            raise ProcessFailure(
+                "WiFi RX device identity must be provided by inventory environment"
+            )
+        config["input"]["device_args"] = device_args
+        config["input"]["gain_db"] = float(plan.parameters["wifi_rx_gain_db"])
+        config["waveform_config"]["filters"]["experiment_id"] = int(
+            hashlib.sha256((plan.run_id or "").encode()).hexdigest()[:8],
+            16,
+        )
     config["output"]["feature_path"] = str(execution / "features.jsonl")
     config["output"]["csi_raw_path"] = str(execution / "csi.cf32")
     config["output"]["write_timings"] = True
@@ -106,12 +157,12 @@ def _hardware_preflight(plan: ExecutionPlan) -> None:
     has_wifi_hardware = (
         {"rx_wifi", "tx_wifi"} <= set(plan.processes)
         and plan.profile.experiment_type
-        in {"wifi_link_smoke", "nosync_passive_hardware_smoke"}
+        in {"wifi_link_smoke", "nosync_passive_hardware_smoke", "nosync_passive"}
     )
     has_ssb_hardware = (
         "rx_5g" in plan.processes
         and plan.profile.experiment_type
-        in {"ssb_rx_smoke", "nosync_passive_hardware_smoke"}
+        in {"ssb_rx_smoke", "nosync_passive_hardware_smoke", "nosync_passive"}
     )
     if has_wifi_hardware:
         _wifi_hardware_preflight(plan)
@@ -149,6 +200,7 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
     if plan.profile.experiment_type not in {
         "wifi_link_smoke",
         "nosync_passive_hardware_smoke",
+        "nosync_passive",
     }:
         return
     tx = plan.processes["tx_wifi"]
@@ -156,24 +208,70 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
     if tx.node.transport != "ssh" or rx.node.transport != "ssh":
         return
     assert tx.node.ssh and rx.node.ssh
-    run_ssh(tx.node.ssh, ["python3", "-c", "import numpy, uhd"], timeout=20)
-    meminfo = run_ssh(tx.node.ssh, ["cat", "/proc/meminfo"], timeout=10).stdout
-    required = required_available_memory_bytes(int(plan.parameters["num_beacons"]))
-    available = available_memory_bytes(meminfo)
-    if available < required:
-        raise ProcessFailure(f"PC2 has insufficient available memory: {available} < {required}")
+    if plan.profile.experiment_type == "nosync_passive":
+        run_ssh(
+            tx.node.ssh,
+            [tx.argv[0], "-c", "import numpy,uhd"],
+            timeout=20,
+            cwd=tx.cwd,
+            env=tx.env,
+        )
+    else:
+        run_ssh(
+            tx.node.ssh,
+            ["python3", "-c", "import numpy, uhd"],
+            timeout=20,
+        )
+    if plan.profile.experiment_type != "nosync_passive":
+        meminfo = run_ssh(tx.node.ssh, ["cat", "/proc/meminfo"], timeout=10).stdout
+        required = required_available_memory_bytes(int(plan.parameters["num_beacons"]))
+        available = available_memory_bytes(meminfo)
+        if available < required:
+            raise ProcessFailure(f"PC2 has insufficient available memory: {available} < {required}")
     rx_binary = next((value for value in rx.argv if "online_waveform_pipeline" in value), None)
     if not rx_binary:
         raise ProcessFailure("RX command does not identify online_waveform_pipeline")
     run_ssh(rx.node.ssh, ["test", "-x", rx_binary], timeout=10)
-    for resolved, serial in (
-        (tx, _argument_value(tx.argv, "--serial")),
-        (rx, _wifi_rx_serial(plan)),
-    ):
-        assert resolved.node.ssh
-        found = run_ssh(resolved.node.ssh, ["uhd_find_devices", "--args", f"serial={serial}"], timeout=30)
-        if serial not in found.stdout:
-            raise ProcessFailure(f"Configured USRP was not discovered on {resolved.node.node_id}")
+    if plan.profile.experiment_type == "nosync_passive":
+        binary_strings = run_ssh(
+            rx.node.ssh,
+            ["strings", rx_binary],
+            timeout=30,
+        ).stdout
+        if (
+            "local_usrp_device_time_first_sample_plus_"
+            "detector_offset_samples"
+            not in binary_strings
+        ):
+            raise ProcessFailure(
+                "WiFi RX binary lacks canonical device timestamp support"
+            )
+    rx_serial = _wifi_rx_serial(plan)
+    found = run_ssh(
+        rx.node.ssh,
+        ["uhd_find_devices", "--args", f"serial={rx_serial}"],
+        timeout=30,
+    )
+    if rx_serial not in found.stdout:
+        raise ProcessFailure(f"Configured USRP was not discovered on {rx.node.node_id}")
+    if plan.profile.experiment_type == "nosync_passive":
+        device_args = _argument_value(tx.argv, "--device-args")
+        found = run_ssh(
+            tx.node.ssh,
+            ["uhd_find_devices", "--args", device_args],
+            timeout=30,
+        )
+        if "N310" not in found.stdout.upper():
+            raise ProcessFailure("Configured N310 was not discovered on PC3PC4")
+    else:
+        tx_serial = _argument_value(tx.argv, "--serial")
+        found = run_ssh(
+            tx.node.ssh,
+            ["uhd_find_devices", "--args", f"serial={tx_serial}"],
+            timeout=30,
+        )
+        if tx_serial not in found.stdout:
+            raise ProcessFailure(f"Configured USRP was not discovered on {tx.node.node_id}")
 
 
 def _ssb_hardware_preflight(plan: ExecutionPlan) -> None:
@@ -182,13 +280,26 @@ def _ssb_hardware_preflight(plan: ExecutionPlan) -> None:
         return
     assert rx.node.ssh
     interpreter = rx.argv[0]
-    script = next((value for value in rx.argv if value.endswith("/online_5g_rxgrid_jsonl.py")), None)
+    script = next(
+        (
+            value
+            for value in rx.argv
+            if value.endswith("/online_5g_rxgrid_jsonl.py")
+            or value == "src.python.fusion_dataset.online_5g_hssb_jsonl_parallel"
+        ),
+        None,
+    )
     if script is None:
-        raise ProcessFailure("5G RX command does not identify online_5g_rxgrid_jsonl.py")
+        raise ProcessFailure("5G RX command does not identify a supported online receiver")
     run_ssh(rx.node.ssh, ["test", "-x", interpreter], timeout=10)
+    help_argv = (
+        [interpreter, "-m", script, "--help"]
+        if script == "src.python.fusion_dataset.online_5g_hssb_jsonl_parallel"
+        else [interpreter, script, "--help"]
+    )
     help_result = run_ssh(
         rx.node.ssh,
-        [interpreter, script, "--help"],
+        help_argv,
         timeout=30,
         cwd=rx.cwd,
         env=rx.env,
@@ -227,11 +338,34 @@ def _ssb_hardware_preflight(plan: ExecutionPlan) -> None:
             "cwd": str(rx.cwd),
             "environment_keys": sorted(rx.env),
             "script_sha256": hashlib.sha256(
-                (Path(__file__).resolve().parents[2] / "modulos_rx_tx" / "src" / "python" / "ssb_python" / "online_5g_rxgrid_jsonl.py").read_bytes()
+                (
+                    Path(__file__).resolve().parents[2]
+                    / "modulos_rx_tx"
+                    / (
+                        "src/python/fusion_dataset/online_5g_hssb_jsonl_parallel.py"
+                        if plan.profile.experiment_type == "nosync_passive"
+                        else "src/python/ssb_python/online_5g_rxgrid_jsonl.py"
+                    )
+                ).read_bytes()
             ).hexdigest(),
             "warnings": warnings,
         }
     )
+    if plan.profile.experiment_type == "nosync_passive":
+        relative_script = (
+            "src/python/fusion_dataset/online_5g_hssb_jsonl_parallel.py"
+        )
+        remote_script = rx.node.workspace / "modulos_rx_tx" / relative_script
+        remote_digest = run_ssh(
+            rx.node.ssh,
+            ["sha256sum", str(remote_script)],
+            timeout=15,
+        ).stdout.split()[0]
+        if remote_digest != environment["script_sha256"]:
+            raise ProcessFailure(
+                "5G RX script digest differs between PC5 and remote workspace"
+            )
+        environment["remote_script_sha256"] = remote_digest
     atomic_write_json(plan.run_dir / ".control" / "ssb-environment.json", environment, mode=0o600)
     try:
         serial = _argument_value(rx.argv, "--serial")
@@ -239,7 +373,9 @@ def _ssb_hardware_preflight(plan: ExecutionPlan) -> None:
         raise ProcessFailure("5G RX serial is not configured") from exc
     found = run_ssh(rx.node.ssh, ["uhd_find_devices", "--args", f"serial={serial}"], timeout=30)
     if serial not in found.stdout:
-        raise ProcessFailure("Configured 5G RX USRP was not discovered on pc3pc4")
+        raise ProcessFailure(
+            f"Configured 5G RX USRP was not discovered on {rx.node.node_id}"
+        )
 
 
 def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_parameters: dict[str, str], *, storage_override: str | Path | None = None, dry_run: bool = False, allow_remote_simulation: bool = False, allow_hardware_receive: bool = False, allow_rf_transmit: bool = False, repo_root: Path | None = None) -> tuple[ExecutionPlan, StateStore | None]:
@@ -407,7 +543,10 @@ def _record_operational_window(
     readiness_monotonic: dict[str, float],
     completion_monotonic: float,
 ) -> None:
-    if plan.profile.experiment_type != "nosync_passive_hardware_smoke":
+    if plan.profile.experiment_type not in {
+        "nosync_passive_hardware_smoke",
+        "nosync_passive",
+    }:
         return
     state = store.load()
     receiver_ids = [
@@ -469,6 +608,21 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
         store.update(claim)
         claimed_supervisor = True
         for group in plan.profile.start_groups:
+            if (
+                plan.profile.experiment_type == "nosync_passive"
+                and any(
+                    plan.processes[producer_id].definition.role == "transmitter"
+                    for producer_id in group
+                )
+            ):
+                guard_deadline = (
+                    time.monotonic()
+                    + float(plan.parameters["pre_tx_guard_s"])
+                )
+                while time.monotonic() < guard_deadline:
+                    if received_signal:
+                        raise KeyboardInterrupt
+                    time.sleep(min(0.05, guard_deadline - time.monotonic()))
             starts: dict[str, float] = {}
             deadlines: dict[str, float] = {}
             for producer_id in group:
@@ -501,7 +655,13 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
         last_heartbeat = 0.0
         duration = float(plan.parameters.get("duration_s", 0))
         completion = plan.profile.orchestration.get("completion")
-        overall_deadline = started + (global_timeout_s(int(plan.parameters["num_beacons"])) if completion else duration)
+        if completion and plan.profile.experiment_type == "nosync_passive":
+            timeout_s = nosync_global_timeout_s(plan.parameters)
+        elif completion:
+            timeout_s = global_timeout_s(int(plan.parameters["num_beacons"]))
+        else:
+            timeout_s = duration
+        overall_deadline = started + timeout_s
         drain_started: float | None = None
         last_growth = started
         last_size = -1

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:association-result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "association_id", "run_id", "status", "started_at", "finished_at", "pair_count", "error"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "association_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["SUCCEEDED", "FAILED"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "pair_count": {"type": "integer", "minimum": 0},
+    "error": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": {"type": "string"},
+            "message": {"type": "string"}
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:association-manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "association_id", "run_id", "status", "adapter", "semantics", "files"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "association_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {"const": "COMPLETE"},
+    "adapter": {"const": "nearest-ntp"},
+    "semantics": {"const": "approximate_operational_ntp_association_not_acquisition_alignment"},
+    "files": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    }
+  }
+}

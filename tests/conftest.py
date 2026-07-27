@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def profile_path() -> Path:
-    return REPO_ROOT / "profiles" / "nosync_passive.yaml"
+    return REPO_ROOT / "profiles" / "nosync_passive_simulated.yaml"
 
 
 @pytest.fixture
@@ -27,4 +27,3 @@ def inventory_path(tmp_path: Path) -> Path:
     path = tmp_path / "inventory.local.yaml"
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return path
-

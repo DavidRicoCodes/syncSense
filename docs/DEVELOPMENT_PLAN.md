@@ -2,7 +2,7 @@
 
 ## Propósito y alcance inmediato
 
-Este documento fija el orden de desarrollo y las decisiones confirmadas para el framework experimental del repositorio padre. El núcleo seguro, la infraestructura SSH/NFS, dos smokes hardware independientes y su smoke conjunto no sincronizado ya están implementados y validados. Los timestamps científicos, los mecanismos de sincronización y el modelo externo siguen pendientes.
+Este documento fija el orden de desarrollo y las decisiones confirmadas para el framework experimental del repositorio padre. El núcleo seguro, la infraestructura SSH/NFS y los smokes hardware están implementados y validados. El software de `nosync_passive` con receptores separados, timestamps USRP locales y asociación NTP derivada está implementado; su aceptación hardware escalonada y los mecanismos posteriores de sincronización siguen pendientes.
 
 ### Estado del primer incremento seguro
 
@@ -16,7 +16,7 @@ Completado y validado exclusivamente con simulación local:
 - Contrato batch del modelo externo, sin adaptador ejecutable ni inferencia.
 - Tests unitarios e integración con procesos locales y SSH falsos.
 
-Se añadió un segundo incremento de infraestructura con SSH y NFS reales para workers sintéticos. Después se integraron `wifi_link_smoke`, `ssb_rx_smoke` y `nosync_passive_hardware_smoke`. El último combina ambos RX y el TX WiFi bajo una frontera operacional y ha sido validado live, pero no equivale a un dataset científico temporal: siguen pendientes timestamps canónicos de trama, `sync_reception` y el modelo entregado por el otro equipo.
+Se añadió un segundo incremento de infraestructura con SSH y NFS reales para workers sintéticos. Después se integraron `wifi_link_smoke`, `ssb_rx_smoke` y `nosync_passive_hardware_smoke`. El escenario físico definitivo de `nosync_passive` separa ahora RX 5G en PC1 y RX WiFi en PC2, y utiliza PC3PC4 como TX N310. Los timestamps canónicos de cada receptor están implementados, pero no existe un dominio de adquisición común.
 
 ### Incremento distribuido de infraestructura
 
@@ -96,6 +96,8 @@ Las referencias temporales canónicas serán:
 
 PTP entre el servidor X410 y PC5 no será un requisito para la sincronización científica. Los tiempos de host se usarán para operación y logs; los timestamps USRP representarán los tiempos de adquisición.
 
+En `nosync_passive`, NTP se limita a una proyección operacional posterior. No ajusta los USRP ni hace comparables sus ticks. Los anchors `CLOCK_MONOTONIC`/`CLOCK_REALTIME` y la telemetría NTP se publican como artefactos auxiliares; cualquier asociación creada con ellos vive fuera del manifiesto raw.
+
 ## Primera entrega: no-sync y recepción sincronizada
 
 ### Núcleo del orquestador
@@ -110,13 +112,17 @@ PTP entre el servidor X410 y PC5 no será un requisito para la sincronización c
 Este será el primer recorrido experimental completo:
 
 1. PC5 crea la sesión y valida todos los nodos.
-2. Arranca PC3 y PC4 y espera a que ambos receptores estén preparados.
-3. Arranca PC2 para transmitir beacons WiFi.
-4. La ejecución no usa un comienzo temporizado ni considera comparables los relojes de PC3 y PC4.
+2. Arranca RX 5G en PC1 y RX WiFi en PC2 y espera a que ambos receptores estén preparados.
+3. Después de un guard configurable, arranca el TX WiFi N310 en PC3PC4.
+4. La ejecución no usa un comienzo UHD temporizado ni considera comparables los relojes de los B210 de PC1 y PC2.
 5. La parada detiene primero la transmisión y después los receptores para conservar las colas de recepción.
-6. PC5 valida los artefactos y publica el manifiesto final.
+6. PC5 valida los artefactos y publica el manifiesto raw final.
 
-El dataset resultante mantendrá dos dominios de reloj explícitamente independientes. El framework no realizará emparejamiento temporal preciso. La ejecución del modelo se añadirá mediante el adaptador externo cuando su equipo entregue el contrato correspondiente.
+El dataset resultante mantiene dos dominios de reloj explícitamente independientes. Cada receptor reinicia su época local y calcula el evento como ticks del primer sample del bloque más el offset del detector. No comparte PPS, 10 MHz, época, frecuencia ni fase RF con el otro receptor.
+
+El comando `association run --adapter nearest-ntp` crea un derivado reintentable bajo `associations/<association_id>/`. Verifica primero el cierre del dataset, exige NTP sincronizado durante la captura, proyecta por separado los tiempos monotónicos de cada host a UTC y busca el SSB más cercano al beacon dentro del margen solicitado. Nunca compara directamente ticks de PC1 con ticks de PC2 y etiqueta todos los pares como `approximate_operational_ntp_association_not_acquisition_alignment`. Un fallo no degrada el dataset raw `COMPLETE`.
+
+La inferencia dummy puede consumir opcionalmente el manifiesto de esa asociación y resumir capturas, pares, pérdidas y deltas. No ejecuta los modelos de `modulos_rx_tx/modelos`, no clasifica y no absorbe la lógica del modelo externo.
 
 #### Incremento previo de integración WiFi
 
@@ -138,7 +144,7 @@ Este recorrido también es `integration_smoke`. El script descarta `RXMetadata.t
 
 La sesión reutiliza íntegramente las validaciones de ambos smokes, publica un único manifiesto y ejecuta una inferencia dummy sin fusión. Registra una ventana monotónica del supervisor PC5 únicamente para calcular duraciones operacionales y la tasa mínima 5G. Los dos dispositivos mantienen dominios `local_device_epoch` diferentes y una relación `not_comparable`; no se crean eventos canónicos ni se emparejan observaciones 5G/WiFi.
 
-La aceptación live se completó con 50 y 200 beacons. Las runs recibieron respectivamente 43/50 (86 %) y 184/200 (92 %) tramas WiFi; RX 5G obtuvo 255/255 y 567/576 grids válidos, por encima de 20 grids/s. Ambas sesiones terminaron `COMPLETE`, verificaron checksums y ejecutaron inferencia dummy `SUCCEEDED`.
+La aceptación live de este smoke histórico se completó con 50 y 200 beacons. Las runs recibieron respectivamente 43/50 (86 %) y 184/200 (92 %) tramas WiFi; RX 5G obtuvo 255/255 y 567/576 grids válidos, por encima de 20 grids/s. Ambas sesiones terminaron `COMPLETE`, verificaron checksums y ejecutaron inferencia dummy `SUCCEEDED`. Este resultado no sustituye la aceptación de la topología física actual.
 
 ### Perfiles activos iniciales
 
@@ -197,10 +203,11 @@ No se fijará anticipadamente una tolerancia arbitraria. El umbral final se deci
 - *Dry-run* que muestre nodos, comandos, orden de arranque y rutas sin controlar hardware.
 - Pruebas NFS de permisos, concurrencia, falta de espacio y desaparición del montaje.
 - Las sesiones fallidas no podrán contener un manifiesto final `COMPLETE`.
+- Las asociaciones e inferencias fallidas no podrán modificar ni degradar una sesión raw ya publicada.
 
 ### Experimentos
 
-`nosync_passive` deberá producir una sesión reproducible, con artefactos separados y dos dominios de reloj marcados explícitamente como no comparables.
+`nosync_passive` deberá producir una sesión reproducible, con artefactos separados, eventos canónicos locales y dos dominios de reloj marcados explícitamente como no comparables. La aceptación hardware progresa por RX 5G aislado, enlace WiFi N310, conjunto de 200 beacons y tres conjuntos de 1000 beacons.
 
 `sync_reception_passive` deberá:
 
@@ -221,6 +228,6 @@ Antes y después de cada fase se comprobará por separado el estado Git del repo
 - Publicación mediante manifiesto final.
 - Alineación RX mediante dos timelines independientes.
 - Primera validación hardware con los experimentos pasivos.
-- El primer desarrollo podrá modificar el padre y `rx_sync`, pero no `modulos_rx_tx`.
+- `modulos_rx_tx` solo se modifica con aprobación expresa y commits separados; `rx_sync` permanece reservado para la fase `sync_reception`.
 - La implementación, entrenamiento y métricas internas del modelo de presence detection, localization o tracking quedan fuera del framework. PC5 sí ejecutará ese modelo mediante un adaptador trazable.
 - Cualquier cambio de hardware, coherencia de fase RF, tecnología de distribución de reloj o formato solicitado por el equipo de ML requerirá validación del usuario.

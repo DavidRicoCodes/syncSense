@@ -25,6 +25,13 @@ SCHEMA_FILES = {
     "batch-model-request": "batch-model-request.schema.json",
     "batch-model-result": "batch-model-result.schema.json",
     "5g-ssb-rxgrid-row": "5g-ssb-rxgrid-row.schema.json",
+    "5g-hssb-row": "5g-hssb-row.schema.json",
+    "host-clock-anchor": "host-clock-anchor.schema.json",
+    "ntp-status": "ntp-status.schema.json",
+    "association-request": "association-request.schema.json",
+    "association-pair": "association-pair.schema.json",
+    "association-result": "association-result.schema.json",
+    "association-manifest": "association-manifest.schema.json",
 }
 
 
@@ -133,6 +140,7 @@ def validate_profile_semantics(raw: dict[str, Any]) -> None:
             raise ValidationFailure("Clock relationship references an unknown domain")
     if raw["experiment_type"] in {
         "nosync_passive",
+        "nosync_passive_simulated",
         "distributed_dummy",
         "nosync_passive_hardware_smoke",
     }:
