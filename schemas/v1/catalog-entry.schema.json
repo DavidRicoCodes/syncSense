@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sync:schema:v1:catalog-entry",
+  "title": "CatalogEntryV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "created_at",
+    "label",
+    "profile",
+    "dimensions",
+    "catalog_path",
+    "run_path",
+    "state_path",
+    "manifest_path"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "run_id": {
+      "type": "string",
+      "pattern": "^run_[0-9]{8}T[0-9]{12}Z_[0-9a-f]{12}$"
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "label": {"type": "string"},
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_id", "experiment_type"],
+      "properties": {
+        "profile_id": {"type": "string", "minLength": 1},
+        "experiment_type": {"type": "string", "minLength": 1}
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testbed_id",
+        "experiment_type",
+        "condition",
+        "position",
+        "subject_id"
+      ],
+      "properties": {
+        "testbed_id": {"type": "string"},
+        "experiment_type": {"type": "string", "minLength": 1},
+        "condition": {"type": "string"},
+        "position": {"type": "string"},
+        "subject_id": {"type": "string"}
+      }
+    },
+    "catalog_path": {
+      "type": "string",
+      "pattern": "^catalog/(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+    },
+    "run_path": {
+      "type": "string",
+      "pattern": "^runs/run_[0-9]{8}T[0-9]{12}Z_[0-9a-f]{12}$"
+    },
+    "state_path": {
+      "type": "string",
+      "pattern": "^runs/run_[0-9]{8}T[0-9]{12}Z_[0-9a-f]{12}/\\.control/state\\.json$"
+    },
+    "manifest_path": {
+      "type": "string",
+      "pattern": "^runs/run_[0-9]{8}T[0-9]{12}Z_[0-9a-f]{12}/manifest\\.json$"
+    }
+  }
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import runpy
+from pathlib import Path
 
 import pytest
 import yaml
@@ -30,6 +31,7 @@ def test_cli_end_to_end(inventory_path, profile_path, capsys):
 
     code, created, _ = invoke(capsys, *common, "preflight", str(profile_path), "--param", "label=empty", "--param", "duration_s=0.15")
     assert code == 0 and created["state"] == "ARMED"
+    assert Path(created["catalog_path"]).is_symlink()
     run_id = created["run_id"]
 
     code, dry_start, _ = invoke(capsys, *common, "start", run_id, "--dry-run")
@@ -38,6 +40,7 @@ def test_cli_end_to_end(inventory_path, profile_path, capsys):
     assert code == 0 and finalizing["state"] == "FINALIZING"
     code, status, _ = invoke(capsys, *common, "status", run_id)
     assert code == 0 and status["state"] == "FINALIZING"
+    assert status["catalog_path"] == created["catalog_path"]
     code, dry_final, _ = invoke(capsys, *common, "finalize", run_id, "--dry-run")
     assert code == 0 and dry_final["mutating"] is False
     code, manifest, _ = invoke(capsys, *common, "finalize", run_id)
@@ -64,6 +67,7 @@ def test_cli_composite_run_and_inference_status(inventory_path, profile_path, ca
     )
     assert code == 0, error
     assert result["dataset_state"] == "COMPLETE" and result["inference_status"] == "SUCCEEDED"
+    assert Path(result["catalog_path"]).resolve() == Path(result["run_dir"]).resolve()
     code, status, error = invoke(capsys, *common, "inference", "status", result["run_id"], result["inference_id"])
     assert code == 0 and status["status"] == "SUCCEEDED", error
     code, retried, error = invoke(capsys, *common, "inference", "run", result["run_id"], "--adapter", "dummy")

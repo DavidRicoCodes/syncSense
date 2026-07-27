@@ -15,6 +15,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def test_nosync_passive_happy_path(inventory_path, profile_path):
     plan, store = preflight(inventory_path, profile_path, {"label": "empty", "duration_s": "0.3"})
     assert store is not None and store.load()["state"] == "ARMED"
+    catalog = list((plan.inventory.storage_root / "catalog").rglob(plan.run_id))
+    assert len(catalog) == 1
+    assert catalog[0].is_symlink()
+    assert catalog[0].resolve() == plan.run_dir.resolve()
+    catalog_metadata = json.loads(
+        (plan.run_dir / ".control" / "catalog.json").read_text(encoding="utf-8")
+    )
+    assert catalog_metadata["label"] == "empty"
+    assert catalog_metadata["run_path"] == f"runs/{plan.run_id}"
     finalizing = start_run(plan, store)
     assert finalizing["state"] == "FINALIZING"
     assert all(record["exit_code"] == 0 for record in finalizing["processes"].values())
@@ -58,6 +67,8 @@ def test_receiver_start_failure_never_starts_transmitter(inventory_path, profile
     except Exception:
         pass
     assert store.load()["state"] == "FAILED"
+    catalog = list((plan.inventory.storage_root / "catalog").rglob(plan.run_id))
+    assert len(catalog) == 1 and catalog[0].resolve() == plan.run_dir.resolve()
     trace_path = plan.run_dir / ".control" / "worker-events.jsonl"
     trace = trace_path.read_text(encoding="utf-8") if trace_path.exists() else ""
     assert '"producer_id": "tx_wifi"' not in trace

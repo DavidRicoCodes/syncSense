@@ -69,6 +69,15 @@ Las IPs, usuarios SSH, seriales, rutas específicas y secretos se mantendrán en
 
 Cada productor escribirá artefactos diferentes dentro de `runs/<run_id>/<producer>/`; dos procesos nunca escribirán simultáneamente el mismo HDF5. PC5 publicará al final un manifiesto versionado que incluya la configuración efectiva, revisiones Git, roles, dominios de reloj, etiquetas, artefactos y checksums. Una sesión solo será consumible cuando exista su manifiesto final con estado `COMPLETE`.
 
+`runs/<run_id>` permanece como identidad y ubicación canónica. Para navegación
+humana, cada preflight real crea una vista secundaria bajo
+`catalog/testbed=<id>/experiment=<type>/condition=<condition>/position=<position>/subject=<subject>/YYYY/MM/DD/<run_id>`.
+La entrada es un enlace relativo a la run y su metadata versionada reside en
+`.control/catalog.json`. No se copia el dataset ni se replica el estado; por
+ello `status`, recuperación, manifiestos, asociaciones e inferencias continúan
+resolviendo exclusivamente por `run_id`. Los intentos fallidos o abortados
+permanecen catalogados y los perfiles sin una dimensión usan `unspecified`.
+
 El desarrollo y entrenamiento del modelo de sensing quedan fuera de este framework, pero PC5 alojará y ejecutará el modelo proporcionado por su equipo. La primera interfaz será el dataset publicado y un adaptador batch configurable que registre versión, configuración, entrada, salida y estado de la inferencia. Una API o inferencia en vivo no forma parte de la primera entrega.
 
 ### Datos y timestamps

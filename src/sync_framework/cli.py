@@ -13,6 +13,7 @@ from .config import load_inventory, load_profile, resolve_parameters
 from .domain import CapabilityDisabled, SyncError, ValidationFailure
 from .inference import inference_status, run_dummy_inference
 from .association import association_status, run_nearest_ntp_association
+from .catalog import catalog_path_for_plan
 from .nfs import bootstrap_nfs, describe_nfs, teardown_nfs, verify_nfs
 from .orchestration import (
     finalize_run,
@@ -201,6 +202,7 @@ def dispatch(args: argparse.Namespace) -> tuple[Any, int]:
                 "run_id": plan.run_id, "dataset_state": manifest["state"],
                 "inference_id": result["inference_id"], "inference_status": result["status"],
                 "run_dir": str(plan.run_dir),
+                "catalog_path": str(catalog_path_for_plan(plan)),
                 "manifest_path": str(plan.run_dir / "manifest.json"),
                 "inference_path": str(plan.run_dir / "inference" / result["inference_id"]),
             }
@@ -225,7 +227,16 @@ def dispatch(args: argparse.Namespace) -> tuple[Any, int]:
             allow_hardware_receive=args.allow_hardware_receive,
             allow_rf_transmit=args.allow_rf_transmit, repo_root=repo_root(),
         )
-        return ({"dry_run": True, **plan.sanitized} if store is None else {"run_id": plan.run_id, "state": store.load()["state"], "run_dir": str(plan.run_dir)}), 0
+        return (
+            {"dry_run": True, **plan.sanitized}
+            if store is None
+            else {
+                "run_id": plan.run_id,
+                "state": store.load()["state"],
+                "run_dir": str(plan.run_dir),
+                "catalog_path": str(catalog_path_for_plan(plan)),
+            }
+        ), 0
     if args.command == "inference":
         inventory = load_inventory(args.inventory, storage_override=args.storage_root)
         target = run_directory(inventory.storage_root, args.run_id)

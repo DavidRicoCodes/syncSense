@@ -32,6 +32,7 @@ SCHEMA_FILES = {
     "association-pair": "association-pair.schema.json",
     "association-result": "association-result.schema.json",
     "association-manifest": "association-manifest.schema.json",
+    "catalog-entry": "catalog-entry.schema.json",
 }
 
 

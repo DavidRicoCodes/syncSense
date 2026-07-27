@@ -56,6 +56,7 @@ git submodule update --init --recursive
 
 - Paquete puro Python 3.12 con layout `src/`, schemas JSON Schema v1 y perfil YAML `nosync_passive`.
 - Máquina de estados persistente, auditoría JSONL, `run_id`, checksums y publicación mediante `manifest.json` con estado `COMPLETE`.
+- Catálogo navegable por testbed, experimento, condición, posición, sujeto y fecha, manteniendo `runs/<run_id>` como ubicación canónica.
 - Arranque receiver-first, parada transmitter-first, *dry-run*, procesos locales seguros, dobles de proceso/SSH y recuperación.
 - Dos dominios temporales RX explícitamente no comparables. El dataset raw no contiene emparejamiento temporal 5G/WiFi; `nearest-ntp` puede producir después una asociación operacional aproximada sin modificarlo.
 - Contrato batch para el futuro modelo externo y adaptador dummy determinista, limitado a validar la integración posterior a una sesión `COMPLETE`.
@@ -145,6 +146,31 @@ PYTHONPATH=src python3 -m sync_framework.cli \
   --inventory config/inventory.local.yaml association run RUN_ID \
   --adapter nearest-ntp --maximum-delta-ms 30
 ```
+
+## Catálogo de ejecuciones
+
+Cada `preflight` real conserva la sesión en su ubicación canónica
+`runs/<run_id>` y crea además un enlace relativo navegable:
+
+```text
+catalog/
+└── testbed=testbed1/
+    └── experiment=nosync_passive/
+        └── condition=occupied_static/
+            └── position=R5C6/
+                └── subject=anonymous/
+                    └── 2026/07/27/<run_id> -> runs/<run_id>
+```
+
+La metadata que permite comprobar o reconstruir esa vista se guarda en
+`runs/<run_id>/.control/catalog.json`. El estado vigente continúa siendo
+`.control/state.json`; el catálogo no lo duplica ni cambia las rutas usadas por
+NFS, publicación, asociación o inferencia. También se catalogan los intentos
+que posteriormente terminen en `FAILED` o `ABORTED`. Los perfiles sin alguna
+de estas dimensiones usan `unspecified`.
+
+Las runs anteriores a esta funcionalidad permanecen intactas bajo `runs/` y no
+se reorganizan automáticamente.
 
 ## Límites de esta fase
 

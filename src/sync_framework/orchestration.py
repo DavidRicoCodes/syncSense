@@ -23,6 +23,7 @@ from .publication import publish_session, verify_published_manifest
 from .run_id import generate_run_id
 from .state import StateStore, utc_now
 from .storage import atomic_write_json, create_run_layout, run_directory
+from .catalog import create_catalog_entry, existing_catalog_path_for_plan
 from .wifi_smoke import available_memory_bytes, global_timeout_s, required_available_memory_bytes
 from .nosync_passive import global_timeout_s as nosync_global_timeout_s
 from .processes.ssh import run_ssh
@@ -416,6 +417,7 @@ def preflight(inventory_path: str | Path, profile_path: str | Path, supplied_par
     store.transition("PREFLIGHT", reason="preflight_started")
     adapter = ProcessRouter(allow_remote_simulation=allow_remote_simulation, allow_hardware_receive=allow_hardware_receive, allow_rf_transmit=allow_rf_transmit)
     try:
+        create_catalog_entry(plan, created_at=store.load()["created_at"])
         _prepare_wifi_config(plan, repo_root or Path(__file__).resolve().parents[2])
         _hardware_preflight(plan)
         for producer_id in plan.processes:
@@ -762,7 +764,19 @@ def status_run(plan: ExecutionPlan, store: StateStore) -> dict[str, Any]:
             health[producer_id] = router.for_handle(handle).probe(handle).__dict__
         else:
             health[producer_id] = {"running": False, "exit_code": record.get("exit_code"), "detail": record["status"]}
-    return {"run_id": plan.run_id, "state": state["state"], "revision": state["revision"], "process_health": health, "stop_request": state.get("stop_request"), "last_error": state.get("last_error")}
+    return {
+        "run_id": plan.run_id,
+        "state": state["state"],
+        "revision": state["revision"],
+        "catalog_path": (
+            str(catalog_path)
+            if (catalog_path := existing_catalog_path_for_plan(plan))
+            else None
+        ),
+        "process_health": health,
+        "stop_request": state.get("stop_request"),
+        "last_error": state.get("last_error"),
+    }
 
 
 def _supervisor_is_fresh(state: dict[str, Any], stale_s: float) -> bool:

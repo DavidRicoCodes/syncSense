@@ -24,7 +24,7 @@ SYNC/
 └── rx_sync/                    # Submódulo de pruebas multibanda X410
 ```
 
-El paquete padre implementa validación de contratos, procesos locales, SSH con capacidades explícitas, estado atómico, supervisión foreground, NFSv4 explícito, publicación, recuperación e inferencia dummy. `nosync_passive` añade publicación raw con eventos USRP locales y asociaciones `nearest-ntp` derivadas e independientes. Todos los perfiles hardware habilitan DSP/RF solo con sus flags de autorización; las pruebas automáticas siguen usando dobles. Los workers distribuidos viven en `tools/` y se ejecutan desde clones Git sin instalar el paquete en los clientes.
+El paquete padre implementa validación de contratos, procesos locales, SSH con capacidades explícitas, estado atómico, supervisión foreground, NFSv4 explícito, publicación, recuperación e inferencia dummy. `nosync_passive` añade publicación raw con eventos USRP locales y asociaciones `nearest-ntp` derivadas e independientes. PC5 mantiene `runs/<run_id>` como layout canónico y crea para cada intento nuevo un catálogo secundario navegable por metadata experimental; las entradas son enlaces relativos y no duplican datasets. Todos los perfiles hardware habilitan DSP/RF solo con sus flags de autorización; las pruebas automáticas siguen usando dobles. Los workers distribuidos viven en `tools/` y se ejecutan desde clones Git sin instalar el paquete en los clientes.
 
 Los archivos locales `AGENTS.md` y `.codex/*` existen para mantener continuidad durante el desarrollo, pero están ignorados deliberadamente y no forman parte del producto versionado. `.codex/HANDOFF.md` es el punto de entrada para trasladar el workspace a PC5 y retomarlo sin el chat original.
 
