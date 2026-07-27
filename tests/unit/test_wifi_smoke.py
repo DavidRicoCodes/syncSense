@@ -138,6 +138,15 @@ def test_wifi_smoke_output_closure(tmp_path):
     assert result["timings"]["packet_end_to_json"]["p95_us"] == 33
 
 
+def test_wifi_smoke_accepts_n310_tx_summary(tmp_path):
+    _valid_outputs(tmp_path, 50, 40)
+    (tmp_path / "tx_wifi" / "process.log").write_text(
+        "Sent packets: 50\nTotal zero sends: 0\n",
+        encoding="utf-8",
+    )
+    assert validate_wifi_smoke_outputs(tmp_path, 50)["frames_received"] == 40
+
+
 @pytest.mark.parametrize(
     "corruption",
     [

@@ -277,8 +277,16 @@ def validate_wifi_smoke_outputs(
     if not saved or int(saved.group(1)) != len(rows):
         raise PublicationFailure("RX summary row count does not match JSONL")
     tx_log = (tx_dir / "process.log").read_text(encoding="utf-8", errors="replace")
-    sent = re.search(r"^Beacons incluidos\s*:\s*(\d+)\s*$", tx_log, re.MULTILINE)
-    zero = re.search(r"^Zero sends\s*:\s*(\d+)\s*$", tx_log, re.MULTILINE)
+    sent = re.search(
+        r"^(?:Beacons incluidos|Sent packets)\s*:\s*(\d+)\s*$",
+        tx_log,
+        re.MULTILINE,
+    )
+    zero = re.search(
+        r"^(?:Zero sends|Total zero sends)\s*:\s*(\d+)\s*$",
+        tx_log,
+        re.MULTILINE,
+    )
     if not sent or int(sent.group(1)) != num_beacons or not zero or int(zero.group(1)) != 0:
         raise PublicationFailure("TX summary does not match the requested successful transmission")
     return {
