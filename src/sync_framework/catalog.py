@@ -55,17 +55,13 @@ def catalog_relative_path(
     """Build the catalog path without consulting or changing the filesystem."""
     validate_run_id(run_id)
     dimensions = catalog_dimensions(experiment_type, parameters)
-    year, month, day = run_id[4:8], run_id[8:10], run_id[10:12]
     return PurePosixPath(
         "catalog",
-        f"testbed={catalog_component(dimensions['testbed_id'])}",
-        f"experiment={catalog_component(dimensions['experiment_type'])}",
-        f"condition={catalog_component(dimensions['condition'])}",
-        f"position={catalog_component(dimensions['position'])}",
-        f"subject={catalog_component(dimensions['subject_id'])}",
-        year,
-        month,
-        day,
+        catalog_component(dimensions["testbed_id"]),
+        catalog_component(dimensions["experiment_type"]),
+        catalog_component(dimensions["condition"]),
+        catalog_component(dimensions["position"]),
+        catalog_component(dimensions["subject_id"]),
         run_id,
     )
 

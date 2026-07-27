@@ -56,7 +56,7 @@ git submodule update --init --recursive
 
 - Paquete puro Python 3.12 con layout `src/`, schemas JSON Schema v1 y perfil YAML `nosync_passive`.
 - Máquina de estados persistente, auditoría JSONL, `run_id`, checksums y publicación mediante `manifest.json` con estado `COMPLETE`.
-- Catálogo navegable por testbed, experimento, condición, posición, sujeto y fecha, manteniendo `runs/<run_id>` como ubicación canónica.
+- Catálogo navegable por testbed, experimento, condición, posición y sujeto, manteniendo `runs/<run_id>` como ubicación canónica.
 - Arranque receiver-first, parada transmitter-first, *dry-run*, procesos locales seguros, dobles de proceso/SSH y recuperación.
 - Dos dominios temporales RX explícitamente no comparables. El dataset raw no contiene emparejamiento temporal 5G/WiFi; `nearest-ntp` puede producir después una asociación operacional aproximada sin modificarlo.
 - Contrato batch para el futuro modelo externo y adaptador dummy determinista, limitado a validar la integración posterior a una sesión `COMPLETE`.
@@ -154,12 +154,12 @@ Cada `preflight` real conserva la sesión en su ubicación canónica
 
 ```text
 catalog/
-└── testbed=testbed1/
-    └── experiment=nosync_passive/
-        └── condition=occupied_static/
-            └── position=R5C6/
-                └── subject=anonymous/
-                    └── 2026/07/27/<run_id> -> runs/<run_id>
+└── testbed1/
+    └── nosync_passive/
+        └── occupied_static/
+            └── R5C6/
+                └── anonymous/
+                    └── <run_id> -> runs/<run_id>
 ```
 
 La metadata que permite comprobar o reconstruir esa vista se guarda en

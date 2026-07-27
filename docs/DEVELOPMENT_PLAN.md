@@ -71,7 +71,7 @@ Cada productor escribirá artefactos diferentes dentro de `runs/<run_id>/<produc
 
 `runs/<run_id>` permanece como identidad y ubicación canónica. Para navegación
 humana, cada preflight real crea una vista secundaria bajo
-`catalog/testbed=<id>/experiment=<type>/condition=<condition>/position=<position>/subject=<subject>/YYYY/MM/DD/<run_id>`.
+`catalog/<testbed>/<experiment>/<condition>/<position>/<subject>/<run_id>`.
 La entrada es un enlace relativo a la run y su metadata versionada reside en
 `.control/catalog.json`. No se copia el dataset ni se replica el estado; por
 ello `status`, recuperación, manifiestos, asociaciones e inferencias continúan

@@ -34,9 +34,8 @@ def test_catalog_path_uses_normalized_experiment_dimensions():
         },
     )
     assert relative.as_posix() == (
-        "catalog/testbed=testbed1/experiment=nosync_passive/"
-        "condition=occupied_static/position=R5C6/subject=anonymous/"
-        f"2026/07/27/{RUN_ID}"
+        "catalog/testbed1/nosync_passive/occupied_static/R5C6/anonymous/"
+        f"{RUN_ID}"
     )
 
 
