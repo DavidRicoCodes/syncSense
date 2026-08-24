@@ -17,6 +17,8 @@ ALLOWED_PLACEHOLDERS = {
     "experiment_id", "detector_threshold", "wifi_rx_gain_db",
     "wifi_tx_gain_db", "wifi_tx_amplitude", "wifi_tx_strategy",
     "wifi_stream_batch_packets", "tx_start_delay_s",
+    "num_packets", "bf_period_ms", "bf_tx_gain_db",
+    "bf_tx_amplitude", "bf_detector_threshold",
 }
 
 

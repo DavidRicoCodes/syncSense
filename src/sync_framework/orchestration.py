@@ -120,19 +120,40 @@ def _allowed_safety(*, allow_remote_simulation: bool, allow_hardware_receive: bo
 def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
     if plan.profile.experiment_type not in {
         "wifi_link_smoke",
+        "wifi_bf_like",
         "nosync_passive_hardware_smoke",
         "nosync_passive",
     }:
         return
-    source = repo_root / "modulos_rx_tx" / "configs" / "pipelines" / "wifi_beacon_online.json"
+
+    config_name = (
+        "bf_like_golay52_online.json"
+        if plan.profile.experiment_type == "wifi_bf_like"
+        else "wifi_beacon_online.json"
+    )
+
+    source = (
+        repo_root
+        / "modulos_rx_tx"
+        / "configs"
+        / "pipelines"
+        / config_name
+    )
     try:
         config = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ProcessFailure(f"Cannot load pinned WiFi RX config: {source}") from exc
     target = plan.processes["rx_wifi"].producer_dir / "runtime" / "effective-config.json"
     execution = plan.processes["rx_wifi"].execution_producer_dir
-    config["waveform_config"]["detector"]["metric_threshold"] = float(plan.parameters["detector_threshold"])
-    if plan.profile.experiment_type == "nosync_passive":
+    threshold_parameter = (
+        "bf_detector_threshold"
+        if plan.profile.experiment_type == "wifi_bf_like"
+        else "detector_threshold"
+    )
+    config["waveform_config"]["detector"]["metric_threshold"] = float(
+        plan.parameters[threshold_parameter]
+    )
+    if plan.profile.experiment_type in {"nosync_passive", "wifi_bf_like"}:
         device_args = plan.processes["rx_wifi"].command.env.get(
             "SYNC_WIFI_RX_DEVICE_ARGS"
         )
@@ -140,8 +161,18 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
             raise ProcessFailure(
                 "WiFi RX device identity must be provided by inventory environment"
             )
+
         config["input"]["device_args"] = device_args
-        config["input"]["gain_db"] = float(plan.parameters["wifi_rx_gain_db"])
+
+        if plan.profile.experiment_type == "nosync_passive":
+            config["input"]["gain_db"] = float(
+                plan.parameters["wifi_rx_gain_db"]
+            )
+        elif plan.profile.experiment_type == "wifi_bf_like":
+            config["input"]["gain_db"] = float(
+                plan.parameters["bf_rx_gain_db"]
+            )
+
         config["waveform_config"]["filters"][
             "experiment_id"
         ] = experiment_id_for_run(plan.run_id)
@@ -157,7 +188,12 @@ def _hardware_preflight(plan: ExecutionPlan) -> None:
     has_wifi_hardware = (
         {"rx_wifi", "tx_wifi"} <= set(plan.processes)
         and plan.profile.experiment_type
-        in {"wifi_link_smoke", "nosync_passive_hardware_smoke", "nosync_passive"}
+        in {
+            "wifi_link_smoke",
+            "wifi_bf_like",
+            "nosync_passive_hardware_smoke",
+            "nosync_passive",
+        }
     )
     has_ssb_hardware = (
         "rx_5g" in plan.processes
@@ -199,6 +235,7 @@ def _wifi_rx_serial(plan: ExecutionPlan) -> str:
 def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
     if plan.profile.experiment_type not in {
         "wifi_link_smoke",
+        "wifi_bf_like",
         "nosync_passive_hardware_smoke",
         "nosync_passive",
     }:
@@ -208,7 +245,7 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
     if tx.node.transport != "ssh" or rx.node.transport != "ssh":
         return
     assert tx.node.ssh and rx.node.ssh
-    if plan.profile.experiment_type == "nosync_passive":
+    if plan.profile.experiment_type in {"nosync_passive", "wifi_bf_like"}:
         run_ssh(
             tx.node.ssh,
             [tx.argv[0], "-c", "import numpy,uhd"],
@@ -222,12 +259,21 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
             ["python3", "-c", "import numpy, uhd"],
             timeout=20,
         )
-    if plan.profile.experiment_type != "nosync_passive":
-        meminfo = run_ssh(tx.node.ssh, ["cat", "/proc/meminfo"], timeout=10).stdout
-        required = required_available_memory_bytes(int(plan.parameters["num_beacons"]))
+    if plan.profile.experiment_type not in {"nosync_passive", "wifi_bf_like"}:
+        meminfo = run_ssh(
+            tx.node.ssh,
+            ["cat", "/proc/meminfo"],
+            timeout=10,
+        ).stdout
+        required = required_available_memory_bytes(
+            int(plan.parameters["num_beacons"])
+        )
         available = available_memory_bytes(meminfo)
         if available < required:
-            raise ProcessFailure(f"PC2 has insufficient available memory: {available} < {required}")
+            raise ProcessFailure(
+                f"TX node has insufficient available memory: "
+                f"{available} < {required}"
+            )
     rx_binary = next((value for value in rx.argv if "online_waveform_pipeline" in value), None)
     if not rx_binary:
         raise ProcessFailure("RX command does not identify online_waveform_pipeline")
@@ -254,7 +300,7 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
     )
     if rx_serial not in found.stdout:
         raise ProcessFailure(f"Configured USRP was not discovered on {rx.node.node_id}")
-    if plan.profile.experiment_type == "nosync_passive":
+    if plan.profile.experiment_type in {"nosync_passive", "wifi_bf_like"}:
         device_args = _argument_value(tx.argv, "--device-args")
         found = run_ssh(
             tx.node.ssh,
@@ -262,7 +308,9 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
             timeout=30,
         )
         if "N310" not in found.stdout.upper():
-            raise ProcessFailure("Configured N310 was not discovered on PC3PC4")
+            raise ProcessFailure(
+                "Configured N310 was not discovered on PC3PC4"
+            )
     else:
         tx_serial = _argument_value(tx.argv, "--serial")
         found = run_ssh(
@@ -659,7 +707,17 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
         if completion and plan.profile.experiment_type == "nosync_passive":
             timeout_s = nosync_global_timeout_s(plan.parameters)
         elif completion:
-            timeout_s = global_timeout_s(int(plan.parameters["num_beacons"]))
+            finite_count = int(
+                plan.parameters.get(
+                    "num_packets",
+                    plan.parameters.get("num_beacons", 0),
+                )
+            )
+            if finite_count <= 0:
+                raise ProcessFailure(
+                    "Finite experiment requires num_packets or num_beacons"
+                )
+            timeout_s = global_timeout_s(finite_count)
         else:
             timeout_s = duration
         overall_deadline = started + timeout_s

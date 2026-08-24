@@ -18,10 +18,12 @@ from .validation import validate_document, validate_event_semantics, validate_re
 from .wifi_smoke import validate_wifi_smoke_outputs
 from .ssb_smoke import SSB_ROW_SCHEMA_REF, validate_ssb_smoke_outputs
 from .nosync_passive import validate_5g_outputs, validate_n310_outputs
+from .wifi_bf_like import validate_bf_like_rx_outputs, validate_bf_like_tx_outputs
 
 
 HARDWARE_SMOKE_TYPES = {
     "wifi_link_smoke",
+    "wifi_bf_like",
     "ssb_rx_smoke",
     "nosync_passive_hardware_smoke",
     "nosync_passive",
@@ -149,6 +151,27 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
             ),
         )
     if (
+        plan.profile.experiment_type == "wifi_bf_like"
+        and producer_id == "rx_wifi"
+    ):
+        wifi_summary = validate_bf_like_rx_outputs(
+            plan.run_dir,
+            num_packets=int(plan.parameters["num_packets"]),
+            minimum_ratio=float(
+                plan.parameters["minimum_bf_reception_ratio"]
+            ),
+        )
+
+    if (
+        plan.profile.experiment_type == "wifi_bf_like"
+        and producer_id == "tx_wifi"
+    ):
+        validate_bf_like_tx_outputs(
+            plan.run_dir,
+            num_packets=int(plan.parameters["num_packets"]),
+        )
+
+    if (
         plan.profile.experiment_type
         in {"ssb_rx_smoke", "nosync_passive_hardware_smoke"}
         and producer_id == "rx_5g"
@@ -199,7 +222,10 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
         records.append(record)
     if wifi_summary and producer_id == "rx_wifi":
         for record in records:
-            if record["artifact_type"] == "wifi_csi_feature_rows":
+            if record["artifact_type"] in {
+                "wifi_csi_feature_rows",
+                "wifi_bf_ltf_feature_rows",
+            }:
                 record["row_count"] = wifi_summary["frames_received"]
                 validate_document(record, "artifact")
     if ssb_summary and producer_id == "rx_5g":
