@@ -25,6 +25,10 @@ from .state import StateStore, utc_now
 from .storage import atomic_write_json, create_run_layout, run_directory
 from .catalog import create_catalog_entry, existing_catalog_path_for_plan
 from .wifi_smoke import available_memory_bytes, global_timeout_s, required_available_memory_bytes
+from .wifi_bf_like import (
+    global_timeout_s as bf_global_timeout_s,
+    required_stream_memory_bytes,
+)
 from .nosync_passive import global_timeout_s as nosync_global_timeout_s
 from .processes.ssh import run_ssh
 
@@ -222,6 +226,15 @@ def _argument_value(argv: tuple[str, ...], option: str) -> str:
         raise ProcessFailure(f"Required command option is missing: {option}") from exc
 
 
+def _optional_argument_value(
+    argv: tuple[str, ...], option: str, default: str
+) -> str:
+    try:
+        return _argument_value(argv, option)
+    except ProcessFailure:
+        return default
+
+
 def _wifi_rx_serial(plan: ExecutionPlan) -> str:
     config_path = plan.processes["rx_wifi"].producer_dir / "runtime" / "effective-config.json"
     try:
@@ -253,13 +266,62 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
             cwd=tx.cwd,
             env=tx.env,
         )
+        if plan.profile.experiment_type == "wifi_bf_like":
+            try:
+                module = tx.argv[tx.argv.index("-m") + 1]
+            except (ValueError, IndexError) as exc:
+                raise ProcessFailure(
+                    "BF-like TX command must identify its Python module with -m"
+                ) from exc
+            help_result = run_ssh(
+                tx.node.ssh,
+                [tx.argv[0], "-m", module, "--help"],
+                timeout=30,
+                cwd=tx.cwd,
+                env=tx.env,
+            )
+            for option in (
+                "--mode", "--period-ms", "--num-packets",
+                "--bf-profile-id", "--training-sequence-id",
+                "--num-bf-ltf", "--tx-strategy",
+            ):
+                if option not in help_result.stdout:
+                    raise ProcessFailure(
+                        f"BF-like TX command lacks required option: {option}"
+                    )
     else:
         run_ssh(
             tx.node.ssh,
             ["python3", "-c", "import numpy, uhd"],
             timeout=20,
         )
-    if plan.profile.experiment_type not in {"nosync_passive", "wifi_bf_like"}:
+    if plan.profile.experiment_type == "wifi_bf_like":
+        meminfo = run_ssh(
+            tx.node.ssh,
+            ["cat", "/proc/meminfo"],
+            timeout=10,
+        ).stdout
+        required = required_stream_memory_bytes(
+            int(plan.parameters["num_packets"]),
+            float(plan.parameters["bf_period_ms"]),
+            batch_packets=int(
+                _optional_argument_value(
+                    tx.argv, "--stream-batch-packets", "20"
+                )
+            ),
+            prefetch_batches=int(
+                _optional_argument_value(
+                    tx.argv, "--stream-prefetch-batches", "3"
+                )
+            ),
+        )
+        available = available_memory_bytes(meminfo)
+        if available < required:
+            raise ProcessFailure(
+                f"BF-like TX node has insufficient available memory: "
+                f"{available} < {required}"
+            )
+    elif plan.profile.experiment_type not in {"nosync_passive"}:
         meminfo = run_ssh(
             tx.node.ssh,
             ["cat", "/proc/meminfo"],
@@ -278,19 +340,20 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
     if not rx_binary:
         raise ProcessFailure("RX command does not identify online_waveform_pipeline")
     run_ssh(rx.node.ssh, ["test", "-x", rx_binary], timeout=10)
-    if plan.profile.experiment_type == "nosync_passive":
+    if plan.profile.experiment_type in {"nosync_passive", "wifi_bf_like"}:
         binary_strings = run_ssh(
             rx.node.ssh,
             ["strings", rx_binary],
             timeout=30,
         ).stdout
-        if (
-            "local_usrp_device_time_first_sample_plus_"
-            "detector_offset_samples"
-            not in binary_strings
-        ):
+        required_string = (
+            "alb_bf_like_golay52_sounding_v2"
+            if plan.profile.experiment_type == "wifi_bf_like"
+            else "local_usrp_device_time_first_sample_plus_detector_offset_samples"
+        )
+        if required_string not in binary_strings:
             raise ProcessFailure(
-                "WiFi RX binary lacks canonical device timestamp support"
+                "WiFi RX binary lacks the required profile/timestamp support"
             )
     rx_serial = _wifi_rx_serial(plan)
     found = run_ssh(
@@ -706,6 +769,12 @@ def start_run(plan: ExecutionPlan, store: StateStore, *, dry_run: bool = False, 
         completion = plan.profile.orchestration.get("completion")
         if completion and plan.profile.experiment_type == "nosync_passive":
             timeout_s = nosync_global_timeout_s(plan.parameters)
+        elif completion and plan.profile.experiment_type == "wifi_bf_like":
+            timeout_s = bf_global_timeout_s(
+                int(plan.parameters["num_packets"]),
+                float(plan.parameters["bf_period_ms"]),
+                max_drain_s=float(plan.parameters["rx_max_drain_s"]),
+            )
         elif completion:
             finite_count = int(
                 plan.parameters.get(

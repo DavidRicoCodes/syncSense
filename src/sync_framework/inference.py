@@ -86,6 +86,24 @@ class DummyBatchModelAdapter:
                 "receive_ratio": received / requested,
                 "input_data": "real_hardware_integration_smoke",
             }
+        elif manifest["profile"]["profile_id"] == "wifi_bf_like":
+            requested = int(manifest["parameters"]["num_packets"])
+            received = next(
+                int(artifact["row_count"])
+                for producer in producer_manifests
+                if producer["producer_id"] == "rx_wifi"
+                for artifact in producer["artifacts"]
+                if artifact["artifact_type"] == "wifi_bf_ltf_feature_rows"
+            )
+            summary["wifi_bf_like"] = {
+                "packets_requested": requested,
+                "frames_received": received,
+                "frames_lost": requested - received,
+                "receive_ratio": received / requested,
+                "feature_shape": [8, 52],
+                "input_data": "real_hardware_integration_smoke",
+                "classification_performed": False,
+            }
         elif manifest["profile"]["profile_id"] == "ssb_rx_smoke":
             ssb = validate_ssb_smoke_outputs(
                 run_dir,

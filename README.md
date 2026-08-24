@@ -99,6 +99,31 @@ PC5 arranca primero el RX, exige un `STATUS` de al menos 19 Msps y solo entonces
 
 El parámetro opcional `detector_threshold` conserva `0.85` como valor predeterminado y permite campañas controladas con otros umbrales. Cuando se ejecuta este smoke, el RX añade `frame-timings.jsonl` y `block-timings.jsonl` con latencias operacionales del host. Estas medidas incluyen incertidumbre de entrega USB/host y no son timestamps RF. El runner parametrizable y el formato de resultados se documentan en [`docs/WIFI_THRESHOLD_CAMPAIGNS.md`](docs/WIFI_THRESHOLD_CAMPAIGNS.md).
 
+El perfil `wifi_bf_like` integra como *smoke* el sounding Golay52 BF-like de
+ocho BF-LTF por paquete. PC2 recibe primero y PC3PC4 transmite después con el
+N310; no es todavía `nosync_active` ni una inferencia científica:
+
+```bash
+PYTHONPATH=src /usr/bin/python3 -m sync_framework.cli \
+  --inventory config/inventory.local.yaml --format json \
+  experiment run profiles/wifi_bf_like.yaml \
+  --param label=wifi-bf-like-smoke --param num_packets=20 \
+  --param bf_period_ms=100 --param bf_detector_threshold=0.90 \
+  --param bf_rx_gain_db=60 --param bf_tx_gain_db=60 \
+  --param bf_tx_amplitude=0.60 --inference dummy \
+  --allow-hardware-receive --allow-rf-transmit
+```
+
+El inventario versionable sin identidades del laboratorio está en
+`config/inventory.wifi-bf-like.example.yaml`. La publicación exige el contrato
+Golay52 v2, 416 complejos finitos por frame, cierre JSONL/CF32, tiempos UHD
+locales coherentes, cero errores RX/TX y el ratio mínimo configurado. La
+inferencia dummy solo resume paquetes recibidos y no clasifica. Una ejecución
+distribuida puede usar una rama de desarrollo o `detached HEAD`: PC5 y todos
+los nodos participantes deben tener el árbol padre limpio y exactamente el
+mismo commit; para hardware también debe coincidir el commit limpio del
+submódulo.
+
 El smoke 5G pasivo usa `config/inventory.local.yaml`, donde el serial permanece ignorado:
 
 ```bash

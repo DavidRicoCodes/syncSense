@@ -165,7 +165,7 @@ def test_deployment_verification_with_fake_ssh(monkeypatch):
         if "status" in argv:
             return completed(out="")
         if "branch" in argv:
-            return completed(out="main\n")
+            return completed(out="feat/wifi-bf-like-framework\n")
         if "rev-parse" in argv:
             return completed(out=head + "\n")
         if argv[0] == "sha256sum":
@@ -177,6 +177,7 @@ def test_deployment_verification_with_fake_ssh(monkeypatch):
     monkeypatch.setattr("sync_framework.deployment.run_ssh", fake_run)
     checked = verify_remote_workspaces(plan, repo_root=REPO_ROOT)
     assert {item["node_id"] for item in checked} == {"pc1", "pc2", "pc3pc4"}
+    assert {item["branch"] for item in checked} == {"feat/wifi-bf-like-framework"}
 
 
 def test_deployment_helpers_and_remote_guards(monkeypatch):
@@ -189,12 +190,12 @@ def test_deployment_helpers_and_remote_guards(monkeypatch):
     monkeypatch.setattr("sync_framework.deployment._local_git", lambda repo, *args: head if args[0] == "rev-parse" else "")
     monkeypatch.setattr("sync_framework.deployment._sha256", lambda path: "b" * 64)
 
-    for failure in ("dirty", "branch", "head", "digest", "python"):
+    for failure in ("dirty", "head", "digest", "python"):
         def fake_run(ssh, argv, **kwargs):
             if "status" in argv:
                 return completed(out="changed\n" if failure == "dirty" else "")
             if "branch" in argv:
-                return completed(out="dev\n" if failure == "branch" else "main\n")
+                return completed(out="\n")
             if "rev-parse" in argv:
                 return completed(out=(("c" * 40) if failure == "head" else head) + "\n")
             if argv[0] == "sha256sum":

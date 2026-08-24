@@ -31,6 +31,7 @@ def _sha256(path: Path) -> str:
 
 def verify_remote_workspaces(plan: ExecutionPlan, *, repo_root: Path) -> list[dict[str, str]]:
     expected_head = _local_git(repo_root, "rev-parse", "HEAD")
+    local_branch = _local_git(repo_root, "branch", "--show-current") or "(detached)"
     if _local_git(repo_root, "status", "--porcelain", "--ignore-submodules=all"):
         raise ProcessFailure("PC5 parent worktree must be clean before a distributed run")
     checked: list[dict[str, str]] = []
@@ -45,8 +46,6 @@ def verify_remote_workspaces(plan: ExecutionPlan, *, repo_root: Path) -> list[di
         head = run_ssh(node.ssh, ["git", "-C", workspace, "rev-parse", "HEAD"]).stdout.strip()
         if status:
             raise ProcessFailure(f"Remote worktree is dirty: {node_id}")
-        if branch != "main":
-            raise ProcessFailure(f"Remote node is not on main: {node_id} ({branch})")
         if head != expected_head:
             raise ProcessFailure(f"Remote commit differs from PC5: {node_id} ({head})")
         node_processes = [p for p in plan.processes.values() if p.definition.node_id == node_id]
@@ -68,6 +67,17 @@ def verify_remote_workspaces(plan: ExecutionPlan, *, repo_root: Path) -> list[di
             raise ProcessFailure(f"Python 3.10+ is required on {node_id}: {version_text}")
         submodule_head = "not-required"
         if any(p.command.safety_class != "simulation" for p in node_processes):
+            submodule_status = run_ssh(
+                node.ssh,
+                [
+                    "git", "-C", f"{workspace}/modulos_rx_tx", "status",
+                    "--porcelain", "--untracked-files=no",
+                ],
+            ).stdout.strip()
+            if submodule_status:
+                raise ProcessFailure(
+                    f"modulos_rx_tx has tracked changes on {node_id}"
+                )
             submodule_head = run_ssh(node.ssh, ["git", "-C", f"{workspace}/modulos_rx_tx", "rev-parse", "HEAD"]).stdout.strip()
             expected_submodule = _local_git(repo_root / "modulos_rx_tx", "rev-parse", "HEAD")
             if submodule_head != expected_submodule:
@@ -83,5 +93,13 @@ def verify_remote_workspaces(plan: ExecutionPlan, *, repo_root: Path) -> list[di
             ).stdout.split()[0]
             if remote_script_digest != local_script_digest:
                 raise ProcessFailure(f"5G RX script digest differs from PC5: {node_id}")
-        checked.append({"node_id": node_id, "branch": branch, "head": head, "worker_sha256": remote_digest, "python": version_text, "modulos_rx_tx": submodule_head})
+        checked.append({
+            "node_id": node_id,
+            "branch": branch or "(detached)",
+            "head": head,
+            "pc5_branch": local_branch,
+            "worker_sha256": remote_digest,
+            "python": version_text,
+            "modulos_rx_tx": submodule_head,
+        })
     return checked

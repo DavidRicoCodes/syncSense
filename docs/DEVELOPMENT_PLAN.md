@@ -20,7 +20,7 @@ Se añadió un segundo incremento de infraestructura con SSH y NFS reales para w
 
 ### Incremento distribuido de infraestructura
 
-- Los workers se ejecutan directamente desde clones Git verificados en `main`, sin instalar el framework en clientes ni inicializar submódulos.
+- Los workers se ejecutan directamente desde clones Git con el árbol limpio y el mismo commit exacto que PC5, sin instalar el framework en clientes. `main`, una rama de desarrollo y un `detached HEAD` son equivalentes para esta comprobación; la identidad reproducible es el SHA, no el nombre de rama.
 - El adaptador OpenSSH usa host keys estrictas, `BatchMode`, timeouts, keepalive e identidad local/remota PID + start-time.
 - NFSv4 se provisiona únicamente con `storage bootstrap --apply`; no modifica `fstab`, usa `root_squash`/`all_squash` y monta con `nosuid,nodev,noexec`.
 - `distributed_dummy` arranca RX antes que TX y para TX antes que RX sobre tres nodos lógicos, conservando dos clocks sintéticos `not_comparable`.
@@ -136,6 +136,16 @@ La inferencia dummy puede consumir opcionalmente el manifiesto de esa asociació
 #### Incremento previo de integración WiFi
 
 Antes de incorporar RX 5G se valida el enlace PC2 → PC3PC4 → NFS → PC5 mediante `wifi_link_smoke`. El usuario elige entre 1 y 600 beacons; PC5 arranca el RX WiFi, espera una tasa observada de al menos 19 Msps, lanza el TX finito y drena el receptor hasta 2 s de silencio o 10 s como máximo. La publicación requiere al menos el 80 % de contadores, cierre JSONL/CF32 y ausencia de errores UHD/TX.
+
+`wifi_bf_like` añade un *integration smoke* activo acotado para el sounding
+Golay52: PC2 ejecuta RX WiFi y PC3PC4 TX N310. Conserva el orden receiver-first
+y transmitter-first, calcula timeout y memoria a partir de `num_packets` y
+`bf_period_ms`, y publica filas `[8,52]` contra un schema versionado. Este
+perfil valida transporte, DSP, adquisición local y cierre del dataset; no se
+considera uno de los seis experimentos científicos, no crea un índice de
+eventos canónicos y no ejecuta clasificación o ML. Una campaña es una capa
+posterior que repite este perfil; cada invocación del perfil representa una
+sola run trazable.
 
 Este recorrido se clasifica expresamente como `integration_smoke`: conserva los timestamps nativos del receptor solo como campos no verificados, no crea eventos temporales canónicos y no afirma alineación 5G/WiFi. La inferencia posterior sigue siendo dummy y solo resume solicitados, recibidos, perdidos y ratio.
 

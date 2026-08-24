@@ -1,0 +1,84 @@
+schema_version: 1.0.0
+inventory_id: wifi_bf_like_example
+storage:
+  backend: nfs
+  root: /srv/sync-experiments
+  client_mount: /mnt/sync-experiments
+nodes:
+  - node_id: pc2
+    transport: ssh
+    workspace: /replace/with/pc2/syncSense
+    ssh: {host: pc2}
+    commands:
+      - command_id: wifi_bf_like_rx
+        argv: [stdbuf, -oL, -eL, "{workspace}/modulos_rx_tx/build/cpp/online_waveform_pipeline", --config, "{effective_config}"]
+        cwd: "{workspace}/modulos_rx_tx"
+        env:
+          SYNC_WIFI_RX_DEVICE_ARGS: serial=CHANGE_ME_WIFI_RX_SERIAL
+        safety_class: dsp
+  - node_id: pc3pc4
+    transport: ssh
+    workspace: /replace/with/pc3pc4/syncSense
+    ssh: {host: pc3pc4}
+    commands:
+      - command_id: wifi_bf_like_n310_tx
+        argv:
+          - "{workspace}/modulos_rx_tx/.venv_uhd/bin/python"
+          - -u
+          - -m
+          - src.python.wifi_sensing.tx_wifi_usrp
+          - --mode
+          - bf
+          - --device-args
+          - type=n3xx,addr=CHANGE_ME_N310_ADDRESS,master_clock_rate=122.88e6
+          - --freq
+          - "2.462e9"
+          - --rate
+          - "20e6"
+          - --hardware-rate
+          - "20.48e6"
+          - --bandwidth
+          - "20e6"
+          - --skip-bandwidth-setting
+          - --gain
+          - "{bf_tx_gain_db}"
+          - --channel
+          - "0"
+          - --antenna
+          - TX/RX
+          - --amplitude
+          - "{bf_tx_amplitude}"
+          - --period-ms
+          - "{bf_period_ms}"
+          - --num-packets
+          - "{num_packets}"
+          - --experiment-id
+          - "{experiment_id}"
+          - --session-id
+          - "1"
+          - --transmitter-id
+          - "1"
+          - --receiver-group-id
+          - "0"
+          - --bf-profile-id
+          - "2"
+          - --training-sequence-id
+          - "0x5201"
+          - --num-bf-ltf
+          - "8"
+          - --tx-strategy
+          - streamed
+          - --stream-batch-packets
+          - "20"
+          - --start-delay-sec
+          - "2"
+          - --progress-every
+          - "10"
+          - --save-first-npz
+          - "{producer_dir}/first-packet.npz"
+          - --local-json
+          - "{producer_dir}/state.json"
+        cwd: "{workspace}/modulos_rx_tx"
+        env:
+          PYTHONPATH: "{workspace}/modulos_rx_tx:/usr/local/lib/python3.10/site-packages"
+        safety_class: rf

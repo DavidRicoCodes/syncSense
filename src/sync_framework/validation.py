@@ -33,6 +33,7 @@ SCHEMA_FILES = {
     "association-result": "association-result.schema.json",
     "association-manifest": "association-manifest.schema.json",
     "catalog-entry": "catalog-entry.schema.json",
+    "wifi-bf-like-feature-row": "wifi-bf-like-feature-row.schema.json",
 }
 
 

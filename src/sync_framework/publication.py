@@ -12,13 +12,18 @@ from typing import Any
 
 from .checksums import sha256_file
 from .domain import ExecutionPlan, PublicationFailure, SCHEMA_VERSION, ValidationFailure
+from .planning import experiment_id_for_run
 from .state import StateStore, utc_now
 from .storage import atomic_write_json
 from .validation import validate_document, validate_event_semantics, validate_relative_path
 from .wifi_smoke import validate_wifi_smoke_outputs
 from .ssb_smoke import SSB_ROW_SCHEMA_REF, validate_ssb_smoke_outputs
 from .nosync_passive import validate_5g_outputs, validate_n310_outputs
-from .wifi_bf_like import validate_bf_like_rx_outputs, validate_bf_like_tx_outputs
+from .wifi_bf_like import (
+    FEATURE_ROW_SCHEMA_REF,
+    validate_bf_like_rx_outputs,
+    validate_bf_like_tx_outputs,
+)
 
 
 HARDWARE_SMOKE_TYPES = {
@@ -160,6 +165,9 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
             minimum_ratio=float(
                 plan.parameters["minimum_bf_reception_ratio"]
             ),
+            period_ms=float(plan.parameters["bf_period_ms"]),
+            tx_gain_db=float(plan.parameters["bf_tx_gain_db"]),
+            experiment_id=experiment_id_for_run(plan.run_id),
         )
 
     if (
@@ -169,6 +177,10 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
         validate_bf_like_tx_outputs(
             plan.run_dir,
             num_packets=int(plan.parameters["num_packets"]),
+            period_ms=float(plan.parameters["bf_period_ms"]),
+            tx_gain_db=float(plan.parameters["bf_tx_gain_db"]),
+            tx_amplitude=float(plan.parameters["bf_tx_amplitude"]),
+            experiment_id=experiment_id_for_run(plan.run_id),
         )
 
     if (
@@ -227,6 +239,8 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
                 "wifi_bf_ltf_feature_rows",
             }:
                 record["row_count"] = wifi_summary["frames_received"]
+                if record["artifact_type"] == "wifi_bf_ltf_feature_rows":
+                    record["schema_ref"] = FEATURE_ROW_SCHEMA_REF
                 validate_document(record, "artifact")
     if ssb_summary and producer_id == "rx_5g":
         for record in records:
@@ -401,6 +415,8 @@ def _publish_session_locked(plan: ExecutionPlan, store: StateStore, *, repo_root
                 if plan.profile.experiment_type == "nosync_passive_hardware_smoke"
                 else "canonical_local_usrp_ticks_per_receiver_not_cross_comparable_host_ntp_projection_operational_only_no_pairing_in_raw_manifest"
                 if plan.profile.experiment_type == "nosync_passive"
+                else "validated_local_usrp_device_fields_no_canonical_event_index"
+                if plan.profile.experiment_type == "wifi_bf_like"
                 else "profile_defined"
             ),
             "producers": producer_refs,
