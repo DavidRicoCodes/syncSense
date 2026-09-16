@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:sync:schema:v1:wifi-bf-like-feature-row",
-  "title": "WifiBfLikeFeatureRowV1",
+  "title": "WifiHeNdpLikeFeatureRowV1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,23 +17,23 @@
     "complex_features", "real_features", "payload"
   ],
   "properties": {
-    "protocol_version": {"type": "integer", "minimum": 0},
-    "waveform_type": {"type": "integer", "minimum": 0},
-    "profile_id": {"const": 2},
-    "transmitter_id": {"type": "integer", "minimum": 0},
-    "experiment_id": {"type": "integer", "minimum": 1, "maximum": 65535},
-    "schema": {"const": "alb_bf_like_golay52_sounding_v2"},
-    "waveform_type_name": {"const": "bf_like"},
-    "profile_name": {"const": "alb_bf_like_golay52_siso_20mhz_v2"},
-    "session_id": {"type": "integer", "minimum": 0},
-    "receiver_group_id": {"type": "integer", "minimum": 0},
+    "protocol_version": {"const": 1},
+    "waveform_type": {"const": 2},
+    "profile_id": {"const": 3},
+    "transmitter_id": {"const": 1},
+    "experiment_id": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+    "schema": {"const": "alb_he_ndp_like_sounding_v1"},
+    "waveform_type_name": {"const": "he_ndp_like"},
+    "profile_name": {"const": "alb_he_ndp_like_siso_40mhz_v1"},
+    "session_id": {"const": 1},
+    "receiver_group_id": {"const": 0},
     "tx_timestamp_ns": {"type": "integer", "minimum": 0},
     "scheduled_tx_time_ns": {"type": "integer", "minimum": 0},
-    "feature_name": {"const": "bf_ltf_csi"},
+    "feature_name": {"const": "he_ltf_csi"},
     "feature_dtype": {"const": "complex64"},
-    "feature_shape": {"const": [8, 52]},
+    "feature_shape": {"const": [8, 242]},
     "feature_flatten_order": {"const": "C"},
-    "feature_count": {"const": 416},
+    "feature_count": {"const": 1936},
     "valid": {"const": true},
     "error": {"const": ""},
     "packet_counter": {"type": "integer", "minimum": 0},
@@ -52,70 +52,54 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "burst_id", "sounding_index", "beam_id", "codebook_id",
-        "antenna_mask", "num_tx_antennas", "num_rx_antennas_expected",
-        "num_spatial_streams", "num_bf_ltf", "training_sequence_id",
-        "training_seed", "bandwidth_hz", "tx_gain_db", "tx_channel",
-        "tx_antenna_id", "frame_period_us", "packet_duration_samples",
-        "header_crc_valid", "frame_fcs_valid", "stf_metric",
-        "preamble_metric", "coarse_cfo_hz", "fine_cfo_hz",
-        "bf_ltf_signal_power", "bf_ltf_noise_power",
-        "bf_ltf_common_phase_aligned", "golay_pair_length",
-        "golay_pair_repetitions"
+        "num_he_ltf", "he_ltf_tones", "alb_control_bytes",
+        "alb_codeword_repetitions", "packet_duration_samples", "fcs_valid",
+        "coarse_cfo_hz", "fine_cfo_hz", "preamble_metric",
+        "lltf_timing_metric", "he_ltf_repetition_metric"
       ],
       "properties": {
-        "burst_id": {"type": "number"},
-        "sounding_index": {"type": "number"},
-        "beam_id": {"type": "number"},
-        "codebook_id": {"type": "number"},
-        "antenna_mask": {"type": "number"},
-        "num_tx_antennas": {"type": "number"},
-        "num_rx_antennas_expected": {"type": "number"},
-        "num_spatial_streams": {"type": "number"},
-        "num_bf_ltf": {"type": "number"},
-        "training_sequence_id": {"type": "number"},
-        "training_seed": {"type": "number"},
-        "bandwidth_hz": {"type": "number"},
-        "tx_gain_db": {"type": "number"},
-        "tx_channel": {"type": "number"},
-        "tx_antenna_id": {"type": "number"},
-        "frame_period_us": {"type": "number"},
+        "num_he_ltf": {"type": "number"},
+        "he_ltf_tones": {"type": "number"},
+        "alb_control_bytes": {"type": "number"},
+        "alb_codeword_repetitions": {"type": "number"},
         "packet_duration_samples": {"type": "number"},
-        "header_crc_valid": {"type": "number"},
-        "frame_fcs_valid": {"type": "number"},
-        "stf_metric": {"type": "number"},
-        "preamble_metric": {"type": "number"},
+        "fcs_valid": {"type": "number"},
         "coarse_cfo_hz": {"type": "number"},
         "fine_cfo_hz": {"type": "number"},
-        "bf_ltf_signal_power": {"type": "number"},
-        "bf_ltf_noise_power": {"type": "number"},
-        "bf_ltf_common_phase_aligned": {"type": "number"},
-        "golay_pair_length": {"type": "number"},
-        "golay_pair_repetitions": {"type": "number"}
+        "preamble_metric": {"type": "number"},
+        "lltf_timing_metric": {"type": "number"},
+        "he_ltf_repetition_metric": {"type": "number"}
       }
     },
     "text_metadata": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["magic", "bf_sig_magic", "training_family"],
+      "required": ["magic", "training_family"],
       "properties": {
-        "magic": {"const": "ALBBFLK1"},
-        "bf_sig_magic": {"const": "ABFS"},
-        "training_family": {"const": "golay_complementary_52_subcarrier"}
+        "magic": {"const": "ALBF"},
+        "training_family": {"const": "he_ltf_2x_40mhz"}
       }
     },
     "complex_features": {
       "type": "array",
-      "minItems": 416,
-      "maxItems": 416,
+      "minItems": 1936,
+      "maxItems": 1936,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["real", "imag"],
-        "properties": {"real": {"type": "number"}, "imag": {"type": "number"}}
+        "properties": {
+          "real": {"type": "number"},
+          "imag": {"type": "number"}
+        }
       }
     },
     "real_features": {"type": "array", "maxItems": 0},
-    "payload": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 255}}
+    "payload": {
+      "type": "array",
+      "minItems": 27,
+      "maxItems": 27,
+      "items": {"type": "integer", "minimum": 0, "maximum": 255}
+    }
   }
 }

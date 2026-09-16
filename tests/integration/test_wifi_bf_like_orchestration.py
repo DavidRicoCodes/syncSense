@@ -116,7 +116,7 @@ def test_bf_like_receiver_first_publication_and_dummy_inference(tmp_path):
     rx_manifest = json.loads((plan.run_dir / "rx_wifi" / "producer-manifest.json").read_text())
     feature = next(
         artifact for artifact in rx_manifest["artifacts"]
-        if artifact["artifact_type"] == "wifi_bf_ltf_feature_rows"
+        if artifact["artifact_type"] == "wifi_he_ltf_feature_rows"
     )
     assert feature["row_count"] == 1
     assert feature["schema_ref"] == "urn:sync:schema:v1:wifi-bf-like-feature-row"
@@ -126,4 +126,6 @@ def test_bf_like_receiver_first_publication_and_dummy_inference(tmp_path):
     )
     assert summary["wifi_bf_like"]["packets_requested"] == 1
     assert summary["wifi_bf_like"]["frames_received"] == 1
+    assert summary["wifi_bf_like"]["feature_shape"] == [8, 242]
+    assert summary["wifi_bf_like"]["waveform_profile"] == "alb_he_ndp_like_siso_40mhz_v1"
     assert summary["wifi_bf_like"]["classification_performed"] is False

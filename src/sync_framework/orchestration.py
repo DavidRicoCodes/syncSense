@@ -131,7 +131,7 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
         return
 
     config_name = (
-        "bf_like_golay52_online.json"
+        "he_ndp_like_40mhz_online.json"
         if plan.profile.experiment_type == "wifi_bf_like"
         else "wifi_beacon_online.json"
     )
@@ -281,9 +281,8 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
                 env=tx.env,
             )
             for option in (
-                "--mode", "--period-ms", "--num-packets",
-                "--bf-profile-id", "--training-sequence-id",
-                "--num-bf-ltf", "--tx-strategy",
+                "--period-ms", "--num-packets", "--experiment-id",
+                "--session-id", "--hardware-rate", "--tx-strategy",
             ):
                 if option not in help_result.stdout:
                     raise ProcessFailure(
@@ -304,6 +303,9 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
         required = required_stream_memory_bytes(
             int(plan.parameters["num_packets"]),
             float(plan.parameters["bf_period_ms"]),
+            strategy=_optional_argument_value(
+                tx.argv, "--tx-strategy", "timed"
+            ),
             batch_packets=int(
                 _optional_argument_value(
                     tx.argv, "--stream-batch-packets", "20"
@@ -347,7 +349,7 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
             timeout=30,
         ).stdout
         required_string = (
-            "alb_bf_like_golay52_sounding_v2"
+            "alb_he_ndp_like_sounding_v1"
             if plan.profile.experiment_type == "wifi_bf_like"
             else "local_usrp_device_time_first_sample_plus_detector_offset_samples"
         )

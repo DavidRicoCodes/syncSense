@@ -1,8 +1,8 @@
 schema_version: 1.0.0
 profile_id: wifi_bf_like
-profile_version: 1.0.0
+profile_version: 2.0.0
 experiment_type: wifi_bf_like
-description: Hardware WiFi-like Golay52 sounding experiment with eight BF-LTF channel estimates per packet.
+description: Definitive HE NDP-like 40 MHz BF smoke with eight HE-LTF channel estimates per packet.
 
 parameters:
   label: {type: string, required: true}
@@ -10,8 +10,8 @@ parameters:
   bf_period_ms: {type: number, required: false, default: 100, minimum: 10, maximum: 1000}
   bf_detector_threshold: {type: number, required: false, default: 0.90, minimum: 0, maximum: 1}
   bf_rx_gain_db: {type: number, required: false, default: 60, minimum: 0, maximum: 80}
-  bf_tx_gain_db: {type: number, required: false, default: 60, minimum: 0, maximum: 80}
-  bf_tx_amplitude: {type: number, required: false, default: 0.60, minimum: 0.01, maximum: 1}
+  bf_tx_gain_db: {type: number, required: false, default: 65, minimum: 0, maximum: 80}
+  bf_tx_amplitude: {type: number, required: false, default: 0.80, minimum: 0.01, maximum: 1}
   minimum_bf_reception_ratio: {type: number, required: false, default: 0.80, minimum: 0, maximum: 1}
   rx_quiet_s: {type: number, required: false, default: 2, minimum: 0.1, maximum: 30}
   rx_max_drain_s: {type: number, required: false, default: 10, minimum: 1, maximum: 60}
@@ -38,8 +38,8 @@ processes:
       pattern: "STATUS \\| rate=(?:19(?:\\.[0-9]+)?|[2-9][0-9](?:\\.[0-9]+)?) Msps"
     timeouts: {readiness_s: 30, stop_grace_s: 8, kill_s: 2}
     expected_artifacts:
-      - {artifact_id: rx_wifi_features, artifact_type: wifi_bf_ltf_feature_rows, media_type: application/x-ndjson, path: features.jsonl, required: true}
-      - {artifact_id: rx_wifi_csi, artifact_type: wifi_bf_ltf_cf32, media_type: application/octet-stream, path: csi.cf32, required: true}
+      - {artifact_id: rx_wifi_features, artifact_type: wifi_he_ltf_feature_rows, media_type: application/x-ndjson, path: features.jsonl, required: true}
+      - {artifact_id: rx_wifi_csi, artifact_type: wifi_he_ltf_cf32, media_type: application/octet-stream, path: csi.cf32, required: true}
       - {artifact_id: rx_wifi_frame_timings, artifact_type: wifi_frame_timing_rows, media_type: application/x-ndjson, path: frame-timings.jsonl, required: true}
       - {artifact_id: rx_wifi_block_timings, artifact_type: wifi_block_timing_rows, media_type: application/x-ndjson, path: block-timings.jsonl, required: true}
       - {artifact_id: rx_wifi_log, artifact_type: process_log, media_type: text/plain, path: process.log, required: true}
@@ -54,8 +54,8 @@ processes:
     readiness: {type: process_running, grace_s: 0}
     timeouts: {readiness_s: 15, stop_grace_s: 5, kill_s: 2}
     expected_artifacts:
-      - {artifact_id: tx_wifi_state, artifact_type: n310_bf_tx_state, media_type: application/json, path: state.json, required: true}
-      - {artifact_id: tx_wifi_first_packet, artifact_type: wifi_bf_first_packet_npz, media_type: application/octet-stream, path: first-packet.npz, required: true}
+      - {artifact_id: tx_wifi_state, artifact_type: n310_he_ndp_like_tx_state, media_type: application/json, path: state.json, required: true}
+      - {artifact_id: tx_wifi_first_packet, artifact_type: wifi_he_ndp_like_first_packet_npz, media_type: application/octet-stream, path: first-packet.npz, required: true}
       - {artifact_id: tx_wifi_log, artifact_type: process_log, media_type: text/plain, path: process.log, required: true}
       - {artifact_id: tx_wifi_receipt, artifact_type: producer_result, media_type: application/json, path: producer-result.json, required: true}
 

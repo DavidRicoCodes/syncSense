@@ -236,10 +236,10 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
         for record in records:
             if record["artifact_type"] in {
                 "wifi_csi_feature_rows",
-                "wifi_bf_ltf_feature_rows",
+                "wifi_he_ltf_feature_rows",
             }:
                 record["row_count"] = wifi_summary["frames_received"]
-                if record["artifact_type"] == "wifi_bf_ltf_feature_rows":
+                if record["artifact_type"] == "wifi_he_ltf_feature_rows":
                     record["schema_ref"] = FEATURE_ROW_SCHEMA_REF
                 validate_document(record, "artifact")
     if ssb_summary and producer_id == "rx_5g":

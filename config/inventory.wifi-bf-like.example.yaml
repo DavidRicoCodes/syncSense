@@ -26,19 +26,17 @@ nodes:
           - "{workspace}/modulos_rx_tx/.venv_uhd/bin/python"
           - -u
           - -m
-          - src.python.wifi_sensing.tx_wifi_usrp
-          - --mode
-          - bf
+          - src.python.bf_sensing.tx_he_ndp_like_usrp
           - --device-args
           - type=n3xx,addr=CHANGE_ME_N310_ADDRESS,master_clock_rate=122.88e6
           - --freq
           - "2.462e9"
           - --rate
-          - "20e6"
+          - "40e6"
           - --hardware-rate
-          - "20.48e6"
+          - "40.96e6"
           - --bandwidth
-          - "20e6"
+          - "40e6"
           - --skip-bandwidth-setting
           - --gain
           - "{bf_tx_gain_db}"
@@ -60,16 +58,12 @@ nodes:
           - "1"
           - --receiver-group-id
           - "0"
-          - --bf-profile-id
-          - "2"
-          - --training-sequence-id
-          - "0x5201"
-          - --num-bf-ltf
-          - "8"
           - --tx-strategy
-          - streamed
+          - timed
           - --stream-batch-packets
           - "20"
+          - --stream-prefetch-batches
+          - "1"
           - --start-delay-sec
           - "2"
           - --progress-every

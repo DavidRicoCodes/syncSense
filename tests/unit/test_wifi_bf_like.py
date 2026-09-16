@@ -28,21 +28,21 @@ def feature_row(counter: int = 0, *, experiment_id: int = 7) -> dict:
     return {
         "protocol_version": 1,
         "waveform_type": 2,
-        "profile_id": 2,
+        "profile_id": 3,
         "transmitter_id": 1,
         "experiment_id": experiment_id,
-        "schema": "alb_bf_like_golay52_sounding_v2",
-        "waveform_type_name": "bf_like",
-        "profile_name": "alb_bf_like_golay52_siso_20mhz_v2",
+        "schema": "alb_he_ndp_like_sounding_v1",
+        "waveform_type_name": "he_ndp_like",
+        "profile_name": "alb_he_ndp_like_siso_40mhz_v1",
         "session_id": 1,
         "receiver_group_id": 0,
         "tx_timestamp_ns": 0,
         "scheduled_tx_time_ns": 0,
-        "feature_name": "bf_ltf_csi",
+        "feature_name": "he_ltf_csi",
         "feature_dtype": "complex64",
-        "feature_shape": [8, 52],
+        "feature_shape": [8, 242],
         "feature_flatten_order": "C",
-        "feature_count": 416,
+        "feature_count": 1936,
         "valid": True,
         "error": "",
         "packet_counter": counter,
@@ -50,54 +50,36 @@ def feature_row(counter: int = 0, *, experiment_id: int = 7) -> dict:
         "has_rx_device_time": True,
         "rx_block_start_ticks": 1000 + counter * 2000,
         "rx_timestamp_ticks": 1100 + counter * 2000,
-        "rx_tick_rate_hz": 20_000_000,
-        "rx_timestamp_ns": 55_000 + counter * 100_000,
-        "sample_rate_hz": 20_000_000.0,
+        "rx_tick_rate_hz": 40_000_000,
+        "rx_timestamp_ns": 27_500 + counter * 50_000,
+        "sample_rate_hz": 40_000_000.0,
         "center_frequency_hz": 2_462_000_000.0,
         "snr_db": 20.0,
         "cfo_hz": 10.0,
         "power_dbfs": -20.0,
         "numeric_metadata": {
-            "burst_id": 0.0,
-            "sounding_index": float(counter),
-            "beam_id": 0.0,
-            "codebook_id": 0.0,
-            "antenna_mask": 1.0,
-            "num_tx_antennas": 1.0,
-            "num_rx_antennas_expected": 1.0,
-            "num_spatial_streams": 1.0,
-            "num_bf_ltf": 8.0,
-            "training_sequence_id": 0x5201,
-            "training_seed": 93.0,
-            "bandwidth_hz": 20_000_000.0,
-            "tx_gain_db": 60.0,
-            "tx_channel": 0.0,
-            "tx_antenna_id": 0.0,
-            "frame_period_us": 100_000.0,
-            "packet_duration_samples": 4640.0,
-            "header_crc_valid": 1.0,
-            "frame_fcs_valid": 1.0,
-            "stf_metric": 0.95,
+            "num_he_ltf": 8.0,
+            "he_ltf_tones": 242.0,
+            "alb_control_bytes": 27.0,
+            "alb_codeword_repetitions": 2.0,
+            "packet_duration_samples": 5440.0,
+            "fcs_valid": 1.0,
             "preamble_metric": 0.9,
+            "lltf_timing_metric": 0.8,
+            "he_ltf_repetition_metric": 0.98,
             "coarse_cfo_hz": 9.0,
             "fine_cfo_hz": 1.0,
-            "bf_ltf_signal_power": 1.0,
-            "bf_ltf_noise_power": 0.01,
-            "bf_ltf_common_phase_aligned": 1.0,
-            "golay_pair_length": 52.0,
-            "golay_pair_repetitions": 4.0,
         },
         "text_metadata": {
-            "magic": "ALBBFLK1",
-            "bf_sig_magic": "ABFS",
-            "training_family": "golay_complementary_52_subcarrier",
+            "magic": "ALBF",
+            "training_family": "he_ltf_2x_40mhz",
         },
         "complex_features": [
             {"real": 0.25, "imag": -0.25}
             for _ in range(CSI_ELEMENTS_PER_FRAME)
         ],
         "real_features": [],
-        "payload": [],
+        "payload": [0] * 27,
     }
 
 
@@ -105,7 +87,7 @@ def frame_timing(row: dict) -> dict:
     block_first = row["sample_offset"] - 100
     value = {
         "schema": "waveform_frame_timing_v1",
-        "waveform_type": "bf_like",
+        "waveform_type": "he_ndp_like",
         "profile_name": row["profile_name"],
         "packet_counter": row["packet_counter"],
         "sample_offset": row["sample_offset"],
@@ -141,7 +123,7 @@ def block_timing() -> dict:
         "sample_count": 200_000,
         "has_rx_device_time": True,
         "block_start_device_ticks": 1000,
-        "device_tick_rate_hz": 20_000_000,
+        "device_tick_rate_hz": 40_000_000,
         "host_received_steady_ns": 1,
         "queue_wait_us": 1,
         "processing_us": 1,
@@ -186,27 +168,33 @@ def write_tx(root: Path, *, experiment_id: int = 7) -> None:
     state = {
         "schema_version": "wifi_tx_v2",
         "role": "tx",
-        "mode": "bf",
+        "mode": "he_ndp_like",
         "status": "stopped",
         "valid": True,
         "error": None,
-        "tx_strategy": "streamed",
+        "tx_strategy": "timed",
         "num_packets_requested": 1,
         "sent_packets": 1,
         "total_zero_sends": 0,
         "period_ms": 100.0,
-        "gain_db": 60.0,
+        "gain_db": 65.0,
+        "sample_rate_hz": 40_000_000.0,
+        "hardware_rate_hz": 40_960_000.0,
+        "bandwidth_hz": 40_000_000.0,
         "async_event_counts": {"burst_ack": 1},
         "packet_builder": {
-            "mode": "bf",
-            "profile": "alb_bf_like_golay52_siso_20mhz_v2",
-            "training_sequence_id": 0x5201,
-            "num_bf_ltf": 8,
+            "mode": "he_ndp_like",
+            "profile": "alb_he_ndp_like_siso_40mhz_v1",
+            "num_he_ltf": 8,
+            "he_ltf_csi_shape": [8, 242],
+            "packet_samples": 5440,
+            "sample_rate_hz": 40_000_000.0,
+            "strict_ieee_ndp": False,
             "experiment_id": experiment_id,
         },
     }
     (tx / "state.json").write_text(json.dumps(state), encoding="utf-8")
-    (tx / "process.log").write_text("amplitude peak target: 0.600\n")
+    (tx / "process.log").write_text("amplitude peak target: 0.800\n")
 
 
 def validate_rx(root: Path, **overrides):
@@ -214,7 +202,7 @@ def validate_rx(root: Path, **overrides):
         "num_packets": 1,
         "minimum_ratio": 0.8,
         "period_ms": 100.0,
-        "tx_gain_db": 60.0,
+        "tx_gain_db": 65.0,
         "experiment_id": 7,
     }
     values.update(overrides)
@@ -224,15 +212,17 @@ def validate_rx(root: Path, **overrides):
 def test_bf_resource_math():
     assert global_timeout_s(20, 100, max_drain_s=10) == 132
     assert required_stream_memory_bytes(1, 100) == (
-        MEMORY_MARGIN_BYTES + 2_048_000 * 8
+        MEMORY_MARGIN_BYTES + 5_571 * 8
     )
-    assert required_stream_memory_bytes(1000, 100) == (
-        MEMORY_MARGIN_BYTES + 80 * 2_048_000 * 8
+    assert required_stream_memory_bytes(1000, 100, strategy="streamed") == (
+        MEMORY_MARGIN_BYTES + 80 * 4_096_000 * 8
     )
     with pytest.raises(ValueError):
         required_stream_memory_bytes(0, 100)
     with pytest.raises(ValueError):
         required_stream_memory_bytes(1, 100, prefetch_batches=-1)
+    with pytest.raises(ValueError):
+        required_stream_memory_bytes(1, 100, strategy="continuous")
 
 
 def test_bf_schema_is_versioned_and_closed():
@@ -250,27 +240,32 @@ def test_bf_rx_and_tx_happy_path(tmp_path):
     write_tx(tmp_path)
     summary = validate_rx(tmp_path)
     assert summary["frames_received"] == 1
-    assert summary["feature_shape"] == [8, 52]
+    assert summary["feature_shape"] == [8, 242]
     assert validate_bf_like_tx_outputs(
         tmp_path,
         num_packets=1,
         period_ms=100,
-        tx_gain_db=60,
-        tx_amplitude=0.6,
+        tx_gain_db=65,
+        tx_amplitude=0.8,
         experiment_id=7,
-    )["tx_strategy"] == "streamed"
+    )["tx_strategy"] == "timed"
 
 
 @pytest.mark.parametrize(
     "corrupt",
     [
         "nonfinite_feature",
+        "nonfinite_scalar",
+        "nonfinite_metadata",
         "experiment",
         "metadata",
         "device_ticks",
+        "device_before_block",
         "counter",
         "frame_ticks",
+        "frame_count",
         "block_overflow",
+        "no_block_timings",
         "csi",
         "fatal_log",
         "truncated",
@@ -283,14 +278,23 @@ def test_bf_rx_rejects_corruption(tmp_path, corrupt):
     if corrupt == "nonfinite_feature":
         row["complex_features"][0]["real"] = float("nan")
         (rx / "features.jsonl").write_text(json.dumps(row) + "\n")
+    elif corrupt == "nonfinite_scalar":
+        row["snr_db"] = float("nan")
+        (rx / "features.jsonl").write_text(json.dumps(row) + "\n")
+    elif corrupt == "nonfinite_metadata":
+        row["numeric_metadata"]["preamble_metric"] = float("nan")
+        (rx / "features.jsonl").write_text(json.dumps(row) + "\n")
     elif corrupt == "experiment":
         row["experiment_id"] = 8
         (rx / "features.jsonl").write_text(json.dumps(row) + "\n")
     elif corrupt == "metadata":
-        row["numeric_metadata"]["header_crc_valid"] = 0.0
+        row["numeric_metadata"]["fcs_valid"] = 0.0
         (rx / "features.jsonl").write_text(json.dumps(row) + "\n")
     elif corrupt == "device_ticks":
         row["rx_tick_rate_hz"] = 1
+        (rx / "features.jsonl").write_text(json.dumps(row) + "\n")
+    elif corrupt == "device_before_block":
+        row["rx_timestamp_ticks"] = row["rx_block_start_ticks"] - 1
         (rx / "features.jsonl").write_text(json.dumps(row) + "\n")
     elif corrupt == "counter":
         row["packet_counter"] = 1
@@ -299,10 +303,14 @@ def test_bf_rx_rejects_corruption(tmp_path, corrupt):
         timing = frame_timing(row)
         timing["event_device_ticks"] += 1
         (rx / "frame-timings.jsonl").write_text(json.dumps(timing) + "\n")
+    elif corrupt == "frame_count":
+        (rx / "frame-timings.jsonl").write_text("")
     elif corrupt == "block_overflow":
         timing = block_timing()
         timing["overflow"] = True
         (rx / "block-timings.jsonl").write_text(json.dumps(timing) + "\n")
+    elif corrupt == "no_block_timings":
+        (rx / "block-timings.jsonl").write_text("")
     elif corrupt == "csi":
         (rx / "csi.cf32").write_bytes(b"bad")
     elif corrupt == "fatal_log":
@@ -324,6 +332,33 @@ def test_bf_rx_rejects_ratio_and_order(tmp_path):
         validate_rx(other, num_packets=2, minimum_ratio=0.8)
 
 
+def test_bf_rx_accepts_only_pre_frame_startup_overflow(tmp_path):
+    row = feature_row()
+    row["sample_offset"] = 1_000_000
+    row["rx_block_start_ticks"] = 999_900
+    row["rx_timestamp_ticks"] = 1_000_000
+    write_rx(tmp_path, [row])
+    rx = tmp_path / "rx_wifi"
+    startup = block_timing()
+    startup.update(
+        first_sample=0,
+        sample_count=400_000,
+        block_start_device_ticks=1,
+        overflow=True,
+        discontinuity=True,
+        frames=0,
+        decoded=0,
+    )
+    (rx / "block-timings.jsonl").write_text(json.dumps(startup) + "\n")
+    (rx / "process.log").write_text(
+        "Overflows : 1\nTimeouts : 0\nDiscontinuidades : 1\n"
+        "Guardados JSONL : 1\n"
+    )
+    summary = validate_rx(tmp_path)
+    assert summary["startup_overflows"] == 1
+    assert summary["startup_discontinuities"] == 1
+
+
 @pytest.mark.parametrize("payload", [None, "{bad}\n", "[]\n"])
 def test_bf_rx_rejects_missing_or_malformed_jsonl(tmp_path, payload):
     if payload is not None:
@@ -340,8 +375,8 @@ def test_bf_tx_rejects_missing_state(tmp_path):
             tmp_path,
             num_packets=1,
             period_ms=100,
-            tx_gain_db=60,
-            tx_amplitude=0.6,
+            tx_gain_db=65,
+            tx_amplitude=0.8,
             experiment_id=7,
         )
 
@@ -356,8 +391,8 @@ def test_bf_tx_rejects_unproven_amplitude(tmp_path):
             tmp_path,
             num_packets=1,
             period_ms=100,
-            tx_gain_db=60,
-            tx_amplitude=0.6,
+            tx_gain_db=65,
+            tx_amplitude=0.8,
             experiment_id=7,
         )
 
@@ -387,8 +422,8 @@ def test_bf_tx_rejects_invalid_state(tmp_path, path, value):
             tmp_path,
             num_packets=1,
             period_ms=100,
-            tx_gain_db=60,
-            tx_amplitude=0.6,
+            tx_gain_db=65,
+            tx_amplitude=0.8,
             experiment_id=7,
         )
 
@@ -409,8 +444,8 @@ def test_bf_hardware_preflight_checks_help_binary_memory_and_context(monkeypatch
         if "--help" in argv:
             return subprocess.CompletedProcess(
                 argv, 0,
-                stdout="--mode --period-ms --num-packets --bf-profile-id "
-                "--training-sequence-id --num-bf-ltf --tx-strategy",
+                stdout="--period-ms --num-packets --experiment-id "
+                "--session-id --hardware-rate --tx-strategy",
                 stderr="",
             )
         if argv[:2] == ["cat", "/proc/meminfo"]:
@@ -419,7 +454,7 @@ def test_bf_hardware_preflight_checks_help_binary_memory_and_context(monkeypatch
             )
         if argv[0] == "strings":
             return subprocess.CompletedProcess(
-                argv, 0, stdout="alb_bf_like_golay52_sounding_v2\n", stderr=""
+                argv, 0, stdout="alb_he_ndp_like_sounding_v1\n", stderr=""
             )
         if argv[0] == "uhd_find_devices":
             output = "N310 RX123"
@@ -450,8 +485,8 @@ def test_bf_hardware_preflight_rejects_insufficient_memory(monkeypatch):
         if "--help" in argv:
             return subprocess.CompletedProcess(
                 argv, 0,
-                stdout="--mode --period-ms --num-packets --bf-profile-id "
-                "--training-sequence-id --num-bf-ltf --tx-strategy",
+                stdout="--period-ms --num-packets --experiment-id "
+                "--session-id --hardware-rate --tx-strategy",
                 stderr="",
             )
         if argv[:2] == ["cat", "/proc/meminfo"]:

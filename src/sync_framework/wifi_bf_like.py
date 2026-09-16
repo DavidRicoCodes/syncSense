@@ -1,4 +1,4 @@
-"""Validation and resource rules for the WiFi BF-like Golay52 smoke."""
+"""Validation and resource rules for the definitive HE NDP-like BF smoke."""
 
 from __future__ import annotations
 
@@ -14,18 +14,18 @@ from .domain import PublicationFailure
 from .validation import load_schema
 
 
-NUM_BF_LTF = 8
-NUM_ACTIVE_SUBCARRIERS = 52
-CSI_ELEMENTS_PER_FRAME = NUM_BF_LTF * NUM_ACTIVE_SUBCARRIERS
+NUM_HE_LTF = 8
+NUM_ACTIVE_SUBCARRIERS = 242
+CSI_ELEMENTS_PER_FRAME = NUM_HE_LTF * NUM_ACTIVE_SUBCARRIERS
 COMPLEX64_BYTES = 8
-HARDWARE_RATE_HZ = 20_480_000
+HARDWARE_RATE_HZ = 40_960_000
+PACKET_SAMPLES = 5_440
 DEFAULT_STREAM_BATCH_PACKETS = 20
 DEFAULT_STREAM_PREFETCH_BATCHES = 3
 MEMORY_MARGIN_BYTES = 2 * 1024**3
 
-EXPECTED_SCHEMA = "alb_bf_like_golay52_sounding_v2"
-EXPECTED_PROFILE = "alb_bf_like_golay52_siso_20mhz_v2"
-EXPECTED_TRAINING_SEQUENCE_ID = 0x5201
+EXPECTED_SCHEMA = "alb_he_ndp_like_sounding_v1"
+EXPECTED_PROFILE = "alb_he_ndp_like_siso_40mhz_v1"
 FEATURE_ROW_SCHEMA_REF = "urn:sync:schema:v1:wifi-bf-like-feature-row"
 
 
@@ -45,12 +45,20 @@ def required_stream_memory_bytes(
     *,
     batch_packets: int = DEFAULT_STREAM_BATCH_PACKETS,
     prefetch_batches: int = DEFAULT_STREAM_PREFETCH_BATCHES,
+    strategy: str = "timed",
 ) -> int:
-    """Upper bound for queued streamed complex64 samples plus OS headroom."""
+    """Upper bound for TX buffers plus OS headroom."""
     if num_packets <= 0 or period_ms <= 0 or batch_packets <= 0:
         raise ValueError("BF stream sizing inputs must be positive")
     if prefetch_batches < 0:
         raise ValueError("BF stream prefetch count cannot be negative")
+    if strategy not in {"timed", "streamed"}:
+        raise ValueError("Unsupported BF TX strategy")
+    if strategy == "timed":
+        hardware_packet_samples = math.ceil(
+            PACKET_SAMPLES * HARDWARE_RATE_HZ / 40_000_000
+        )
+        return MEMORY_MARGIN_BYTES + hardware_packet_samples * COMPLEX64_BYTES
     samples_per_period = round(period_ms * HARDWARE_RATE_HZ / 1000.0)
     resident_packets = min(
         num_packets,
@@ -125,8 +133,8 @@ def _validate_feature_rows(
         "power_dbfs",
     )
     finite_metadata = (
-        "stf_metric", "preamble_metric", "coarse_cfo_hz", "fine_cfo_hz",
-        "bf_ltf_signal_power", "bf_ltf_noise_power",
+        "preamble_metric", "lltf_timing_metric",
+        "he_ltf_repetition_metric", "coarse_cfo_hz", "fine_cfo_hz",
     )
     for number, row in enumerate(rows, 1):
         errors = sorted(
@@ -149,15 +157,12 @@ def _validate_feature_rows(
         if any(not _finite_number(numeric[name]) for name in finite_metadata):
             raise PublicationFailure(f"Non-finite BF-like metadata at row {number}")
         expected_numeric = {
-            "num_bf_ltf": float(NUM_BF_LTF),
-            "training_sequence_id": float(EXPECTED_TRAINING_SEQUENCE_ID),
-            "golay_pair_length": 52.0,
-            "golay_pair_repetitions": 4.0,
-            "bf_ltf_common_phase_aligned": 1.0,
-            "header_crc_valid": 1.0,
-            "frame_fcs_valid": 1.0,
-            "frame_period_us": float(period_ms * 1000.0),
-            "tx_gain_db": float(tx_gain_db),
+            "num_he_ltf": float(NUM_HE_LTF),
+            "he_ltf_tones": float(NUM_ACTIVE_SUBCARRIERS),
+            "alb_control_bytes": 27.0,
+            "alb_codeword_repetitions": 2.0,
+            "packet_duration_samples": float(PACKET_SAMPLES),
+            "fcs_valid": 1.0,
         }
         if any(numeric[name] != value for name, value in expected_numeric.items()):
             raise PublicationFailure(f"Invalid BF-like metadata at row {number}")
@@ -202,7 +207,7 @@ def _validate_frame_timings(
     for number, (timing, feature) in enumerate(zip(rows, feature_rows), 1):
         expected = {
             "schema": "waveform_frame_timing_v1",
-            "waveform_type": "bf_like",
+            "waveform_type": "he_ndp_like",
             "profile_name": EXPECTED_PROFILE,
             "packet_counter": feature["packet_counter"],
             "sample_offset": feature["sample_offset"],
@@ -241,17 +246,23 @@ def _validate_frame_timings(
             raise PublicationFailure(f"BF-like canonical timestamp mismatch at row {number}")
 
 
-def _validate_block_timings(rows: list[dict[str, Any]]) -> None:
+def _validate_block_timings(
+    rows: list[dict[str, Any]],
+    *,
+    first_feature_sample: int,
+) -> dict[str, int]:
     if not rows:
         raise PublicationFailure("BF-like block timing JSONL must contain at least one row")
     previous_first: int | None = None
     previous_ticks: int | None = None
+    startup_overflows = 0
+    startup_discontinuities = 0
     for number, row in enumerate(rows, 1):
         if (
             row.get("schema") != "waveform_block_timing_v1"
             or row.get("has_rx_device_time") is not True
-            or row.get("overflow") is not False
-            or row.get("discontinuity") is not False
+            or not isinstance(row.get("overflow"), bool)
+            or not isinstance(row.get("discontinuity"), bool)
         ):
             raise PublicationFailure(f"Invalid BF-like block timing at row {number}")
         required_nonnegative = (
@@ -271,8 +282,20 @@ def _validate_block_timings(rows: list[dict[str, Any]]) -> None:
             raise PublicationFailure("BF-like block sample indices must increase")
         if previous_ticks is not None and row["block_start_device_ticks"] <= previous_ticks:
             raise PublicationFailure("BF-like block device ticks must increase")
+        if row["overflow"] or row["discontinuity"]:
+            block_end = row["first_sample"] + row["sample_count"]
+            if block_end > first_feature_sample:
+                raise PublicationFailure(
+                    "BF-like RX discontinuity overlaps or follows useful frames"
+                )
+            startup_overflows += int(row["overflow"])
+            startup_discontinuities += int(row["discontinuity"])
         previous_first = row["first_sample"]
         previous_ticks = row["block_start_device_ticks"]
+    return {
+        "startup_overflows": startup_overflows,
+        "startup_discontinuities": startup_discontinuities,
+    }
 
 
 def validate_bf_like_rx_outputs(
@@ -292,6 +315,8 @@ def validate_bf_like_rx_outputs(
     block_timings = _read_jsonl(
         rx_dir / "block-timings.jsonl", "WiFi BF-like block timing JSONL"
     )
+    if not rows:
+        raise PublicationFailure("WiFi BF-like feature JSONL contains no frames")
     _validate_feature_rows(
         rows,
         num_packets=num_packets,
@@ -300,7 +325,10 @@ def validate_bf_like_rx_outputs(
         experiment_id=experiment_id,
     )
     _validate_frame_timings(frame_timings, rows)
-    _validate_block_timings(block_timings)
+    block_summary = _validate_block_timings(
+        block_timings,
+        first_feature_sample=rows[0]["sample_offset"],
+    )
     required = math.ceil(num_packets * minimum_ratio)
     if len(rows) < required:
         raise PublicationFailure(
@@ -318,8 +346,20 @@ def validate_bf_like_rx_outputs(
         raise PublicationFailure("Cannot read BF-like RX process log") from exc
     if re.search(r"(?:UHD RX error|ERROR hilo UHD|ERROR hilo decoder)", log, re.IGNORECASE):
         raise PublicationFailure("BF-like RX log contains a fatal receive error")
-    for label in ("Overflows", "Timeouts", "Discontinuidades"):
-        _require_zero_summary(log, label)
+    _require_zero_summary(log, "Timeouts")
+    for label, expected in (
+        ("Overflows", block_summary["startup_overflows"]),
+        ("Discontinuidades", block_summary["startup_discontinuities"]),
+    ):
+        match = re.search(
+            rf"^{re.escape(label)}\s*:\s*(\d+)\s*$",
+            log,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        if match is None or int(match.group(1)) != expected:
+            raise PublicationFailure(
+                f"BF RX summary does not match {label.lower()} telemetry"
+            )
     saved = re.search(r"^Guardados JSONL\s*:\s*(\d+)\s*$", log, re.MULTILINE)
     if saved is None or int(saved.group(1)) != len(rows):
         raise PublicationFailure("BF-like RX summary row count does not match JSONL")
@@ -330,8 +370,9 @@ def validate_bf_like_rx_outputs(
         "frames_lost": num_packets - len(rows),
         "receive_ratio": len(rows) / num_packets,
         "csi_elements_per_frame": CSI_ELEMENTS_PER_FRAME,
-        "feature_shape": [NUM_BF_LTF, NUM_ACTIVE_SUBCARRIERS],
-        "training_family": "golay_complementary_52_subcarrier",
+        "feature_shape": [NUM_HE_LTF, NUM_ACTIVE_SUBCARRIERS],
+        "training_family": "he_ltf_2x_40mhz",
+        **block_summary,
     }
 
 
@@ -358,11 +399,11 @@ def validate_bf_like_tx_outputs(
     expected_state = {
         "schema_version": "wifi_tx_v2",
         "role": "tx",
-        "mode": "bf",
+        "mode": "he_ndp_like",
         "status": "stopped",
         "valid": True,
         "error": None,
-        "tx_strategy": "streamed",
+        "tx_strategy": "timed",
         "num_packets_requested": num_packets,
         "sent_packets": num_packets,
         "total_zero_sends": 0,
@@ -374,13 +415,19 @@ def validate_bf_like_tx_outputs(
         or not math.isclose(float(state["period_ms"]), period_ms, abs_tol=1e-6)
         or not _finite_number(state.get("gain_db"))
         or not math.isclose(float(state["gain_db"]), tx_gain_db, abs_tol=1e-6)
+        or state.get("sample_rate_hz") != 40_000_000.0
+        or state.get("hardware_rate_hz") != float(HARDWARE_RATE_HZ)
+        or state.get("bandwidth_hz") != 40_000_000.0
     ):
         raise PublicationFailure("BF-like TX period or gain mismatch")
     builder_expected = {
-        "mode": "bf",
+        "mode": "he_ndp_like",
         "profile": EXPECTED_PROFILE,
-        "training_sequence_id": EXPECTED_TRAINING_SEQUENCE_ID,
-        "num_bf_ltf": NUM_BF_LTF,
+        "num_he_ltf": NUM_HE_LTF,
+        "he_ltf_csi_shape": [NUM_HE_LTF, NUM_ACTIVE_SUBCARRIERS],
+        "packet_samples": PACKET_SAMPLES,
+        "sample_rate_hz": 40_000_000.0,
+        "strict_ieee_ndp": False,
         "experiment_id": experiment_id,
     }
     if any(builder.get(key) != value for key, value in builder_expected.items()):
@@ -418,5 +465,5 @@ def validate_bf_like_tx_outputs(
         "sent_packets": num_packets,
         "zero_sends": 0,
         "fatal_async_events": {},
-        "tx_strategy": "streamed",
+        "tx_strategy": "timed",
     }

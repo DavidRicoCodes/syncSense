@@ -93,14 +93,15 @@ class DummyBatchModelAdapter:
                 for producer in producer_manifests
                 if producer["producer_id"] == "rx_wifi"
                 for artifact in producer["artifacts"]
-                if artifact["artifact_type"] == "wifi_bf_ltf_feature_rows"
+                if artifact["artifact_type"] == "wifi_he_ltf_feature_rows"
             )
             summary["wifi_bf_like"] = {
                 "packets_requested": requested,
                 "frames_received": received,
                 "frames_lost": requested - received,
                 "receive_ratio": received / requested,
-                "feature_shape": [8, 52],
+                "feature_shape": [8, 242],
+                "waveform_profile": "alb_he_ndp_like_siso_40mhz_v1",
                 "input_data": "real_hardware_integration_smoke",
                 "classification_performed": False,
             }

@@ -99,9 +99,11 @@ PC5 arranca primero el RX, exige un `STATUS` de al menos 19 Msps y solo entonces
 
 El parámetro opcional `detector_threshold` conserva `0.85` como valor predeterminado y permite campañas controladas con otros umbrales. Cuando se ejecuta este smoke, el RX añade `frame-timings.jsonl` y `block-timings.jsonl` con latencias operacionales del host. Estas medidas incluyen incertidumbre de entrega USB/host y no son timestamps RF. El runner parametrizable y el formato de resultados se documentan en [`docs/WIFI_THRESHOLD_CAMPAIGNS.md`](docs/WIFI_THRESHOLD_CAMPAIGNS.md).
 
-El perfil `wifi_bf_like` integra como *smoke* el sounding Golay52 BF-like de
-ocho BF-LTF por paquete. PC2 recibe primero y PC3PC4 transmite después con el
-N310; no es todavía `nosync_active` ni una inferencia científica:
+El perfil `wifi_bf_like` integra como BF definitivo el sounding HE NDP-like
+de 40 MHz con ocho HE-LTF y CSI `[8,242]` por paquete. PC2 recibe primero y
+PC3PC4 transmite después con el N310; la ejecución sigue siendo un
+*integration smoke* de una banda, no el experimento multibanda
+`nosync_active` ni una inferencia científica:
 
 ```bash
 PYTHONPATH=src /usr/bin/python3 -m sync_framework.cli \
@@ -109,15 +111,17 @@ PYTHONPATH=src /usr/bin/python3 -m sync_framework.cli \
   experiment run profiles/wifi_bf_like.yaml \
   --param label=wifi-bf-like-smoke --param num_packets=20 \
   --param bf_period_ms=100 --param bf_detector_threshold=0.90 \
-  --param bf_rx_gain_db=60 --param bf_tx_gain_db=60 \
-  --param bf_tx_amplitude=0.60 --inference dummy \
+  --param bf_rx_gain_db=60 --param bf_tx_gain_db=65 \
+  --param bf_tx_amplitude=0.80 --inference dummy \
   --allow-hardware-receive --allow-rf-transmit
 ```
 
 El inventario versionable sin identidades del laboratorio está en
 `config/inventory.wifi-bf-like.example.yaml`. La publicación exige el contrato
-Golay52 v2, 416 complejos finitos por frame, cierre JSONL/CF32, tiempos UHD
-locales coherentes, cero errores RX/TX y el ratio mínimo configurado. La
+HE NDP-like v1, 1936 complejos finitos por frame, cierre JSONL/CF32, tiempos
+UHD locales coherentes, cero errores durante la captura útil y el ratio mínimo
+configurado. Se admiten únicamente discontinuidades de arranque anteriores a
+la primera trama útil y quedan contabilizadas en el resumen. La
 inferencia dummy solo resume paquetes recibidos y no clasifica. Una ejecución
 distribuida puede usar una rama de desarrollo o `detached HEAD`: PC5 y todos
 los nodos participantes deben tener el árbol padre limpio y exactamente el
