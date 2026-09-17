@@ -37,6 +37,10 @@ nodes:
           - "{bf_hardware_rate_hz}"
           - --bandwidth
           - "{bf_bandwidth_mhz}e6"
+          # Avoid a redundant N310 RFIC recalibration immediately before the
+          # first timed burst. The sample-rate setting already selects the
+          # required 20/40 MHz digital path.
+          - --skip-bandwidth-setting
           - --gain
           - "{bf_tx_gain_db}"
           - --channel
