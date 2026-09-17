@@ -32,12 +32,11 @@ nodes:
           - --freq
           - "2.462e9"
           - --rate
-          - "40e6"
+          - "{bf_bandwidth_mhz}e6"
           - --hardware-rate
-          - "40.96e6"
+          - "{bf_hardware_rate_hz}"
           - --bandwidth
-          - "40e6"
-          - --skip-bandwidth-setting
+          - "{bf_bandwidth_mhz}e6"
           - --gain
           - "{bf_tx_gain_db}"
           - --channel

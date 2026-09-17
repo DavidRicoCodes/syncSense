@@ -130,11 +130,13 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
     }:
         return
 
-    config_name = (
-        "he_ndp_like_40mhz_online.json"
-        if plan.profile.experiment_type == "wifi_bf_like"
-        else "wifi_beacon_online.json"
-    )
+    if plan.profile.experiment_type == "wifi_bf_like":
+        bandwidth_mhz = int(plan.parameters["bf_bandwidth_mhz"])
+        if bandwidth_mhz not in (20, 40):
+            raise ProcessFailure("bf_bandwidth_mhz must be 20 or 40")
+        config_name = f"he_ndp_like_{bandwidth_mhz}mhz_online.json"
+    else:
+        config_name = "wifi_beacon_online.json"
 
     source = (
         repo_root
@@ -303,6 +305,7 @@ def _wifi_hardware_preflight(plan: ExecutionPlan) -> None:
         required = required_stream_memory_bytes(
             int(plan.parameters["num_packets"]),
             float(plan.parameters["bf_period_ms"]),
+            bandwidth_mhz=int(plan.parameters["bf_bandwidth_mhz"]),
             strategy=_optional_argument_value(
                 tx.argv, "--tx-strategy", "timed"
             ),

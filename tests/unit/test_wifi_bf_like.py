@@ -18,13 +18,20 @@ from sync_framework.wifi_bf_like import (
     FEATURE_ROW_SCHEMA_REF,
     MEMORY_MARGIN_BYTES,
     global_timeout_s,
+    phy_contract,
     required_stream_memory_bytes,
     validate_bf_like_rx_outputs,
     validate_bf_like_tx_outputs,
 )
 
 
-def feature_row(counter: int = 0, *, experiment_id: int = 7) -> dict:
+def feature_row(
+    counter: int = 0,
+    *,
+    experiment_id: int = 7,
+    bandwidth_mhz: int = 40,
+) -> dict:
+    contract = phy_contract(bandwidth_mhz)
     return {
         "protocol_version": 1,
         "waveform_type": 2,
@@ -33,16 +40,16 @@ def feature_row(counter: int = 0, *, experiment_id: int = 7) -> dict:
         "experiment_id": experiment_id,
         "schema": "alb_he_ndp_like_sounding_v1",
         "waveform_type_name": "he_ndp_like",
-        "profile_name": "alb_he_ndp_like_siso_40mhz_v1",
+        "profile_name": contract.profile,
         "session_id": 1,
         "receiver_group_id": 0,
         "tx_timestamp_ns": 0,
         "scheduled_tx_time_ns": 0,
         "feature_name": "he_ltf_csi",
         "feature_dtype": "complex64",
-        "feature_shape": [8, 242],
+        "feature_shape": contract.feature_shape,
         "feature_flatten_order": "C",
-        "feature_count": 1936,
+        "feature_count": contract.csi_elements_per_frame,
         "valid": True,
         "error": "",
         "packet_counter": counter,
@@ -50,19 +57,23 @@ def feature_row(counter: int = 0, *, experiment_id: int = 7) -> dict:
         "has_rx_device_time": True,
         "rx_block_start_ticks": 1000 + counter * 2000,
         "rx_timestamp_ticks": 1100 + counter * 2000,
-        "rx_tick_rate_hz": 40_000_000,
-        "rx_timestamp_ns": 27_500 + counter * 50_000,
-        "sample_rate_hz": 40_000_000.0,
+        "rx_tick_rate_hz": contract.sample_rate_hz,
+        "rx_timestamp_ns": round(
+            (1100 + counter * 2000)
+            * 1_000_000_000
+            / contract.sample_rate_hz
+        ),
+        "sample_rate_hz": float(contract.sample_rate_hz),
         "center_frequency_hz": 2_462_000_000.0,
         "snr_db": 20.0,
         "cfo_hz": 10.0,
         "power_dbfs": -20.0,
         "numeric_metadata": {
             "num_he_ltf": 8.0,
-            "he_ltf_tones": 242.0,
+            "he_ltf_tones": float(contract.active_subcarriers),
             "alb_control_bytes": 27.0,
             "alb_codeword_repetitions": 2.0,
-            "packet_duration_samples": 5440.0,
+            "packet_duration_samples": float(contract.packet_samples),
             "fcs_valid": 1.0,
             "preamble_metric": 0.9,
             "lltf_timing_metric": 0.8,
@@ -72,16 +83,15 @@ def feature_row(counter: int = 0, *, experiment_id: int = 7) -> dict:
         },
         "text_metadata": {
             "magic": "ALBF",
-            "training_family": "he_ltf_2x_40mhz",
+            "training_family": contract.training_family,
         },
         "complex_features": [
             {"real": 0.25, "imag": -0.25}
-            for _ in range(CSI_ELEMENTS_PER_FRAME)
+            for _ in range(contract.csi_elements_per_frame)
         ],
         "real_features": [],
         "payload": [0] * 27,
     }
-
 
 def frame_timing(row: dict) -> dict:
     block_first = row["sample_offset"] - 100
@@ -116,14 +126,15 @@ def frame_timing(row: dict) -> dict:
     return value
 
 
-def block_timing() -> dict:
+def block_timing(*, bandwidth_mhz: int = 40) -> dict:
+    contract = phy_contract(bandwidth_mhz)
     return {
         "schema": "waveform_block_timing_v1",
         "first_sample": 1000,
         "sample_count": 200_000,
         "has_rx_device_time": True,
         "block_start_device_ticks": 1000,
-        "device_tick_rate_hz": 40_000_000,
+        "device_tick_rate_hz": contract.sample_rate_hz,
         "host_received_steady_ns": 1,
         "queue_wait_us": 1,
         "processing_us": 1,
@@ -138,22 +149,33 @@ def block_timing() -> dict:
     }
 
 
-def write_rx(root: Path, rows: list[dict] | None = None) -> None:
-    rows = rows or [feature_row()]
+def write_rx(
+    root: Path,
+    rows: list[dict] | None = None,
+    *,
+    bandwidth_mhz: int = 40,
+) -> None:
+    contract = phy_contract(bandwidth_mhz)
+    rows = rows or [feature_row(bandwidth_mhz=bandwidth_mhz)]
     rx = root / "rx_wifi"
     rx.mkdir(parents=True)
     (rx / "features.jsonl").write_text(
-        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+        "".join(json.dumps(row) + "\n" for row in rows),
+        encoding="utf-8",
     )
     (rx / "frame-timings.jsonl").write_text(
         "".join(json.dumps(frame_timing(row)) + "\n" for row in rows),
         encoding="utf-8",
     )
     (rx / "block-timings.jsonl").write_text(
-        json.dumps(block_timing()) + "\n", encoding="utf-8"
+        json.dumps(block_timing(bandwidth_mhz=bandwidth_mhz)) + "\n",
+        encoding="utf-8",
     )
     (rx / "csi.cf32").write_bytes(
-        b"\0" * len(rows) * CSI_ELEMENTS_PER_FRAME * 8
+        b"\0"
+        * len(rows)
+        * contract.csi_elements_per_frame
+        * 8
     )
     (rx / "process.log").write_text(
         "Overflows : 0\nTimeouts : 0\nDiscontinuidades : 0\n"
@@ -161,8 +183,13 @@ def write_rx(root: Path, rows: list[dict] | None = None) -> None:
         encoding="utf-8",
     )
 
-
-def write_tx(root: Path, *, experiment_id: int = 7) -> None:
+def write_tx(
+    root: Path,
+    *,
+    experiment_id: int = 7,
+    bandwidth_mhz: int = 40,
+) -> None:
+    contract = phy_contract(bandwidth_mhz)
     tx = root / "tx_wifi"
     tx.mkdir(parents=True)
     state = {
@@ -178,24 +205,26 @@ def write_tx(root: Path, *, experiment_id: int = 7) -> None:
         "total_zero_sends": 0,
         "period_ms": 100.0,
         "gain_db": 65.0,
-        "sample_rate_hz": 40_000_000.0,
-        "hardware_rate_hz": 40_960_000.0,
-        "bandwidth_hz": 40_000_000.0,
+        "sample_rate_hz": float(contract.sample_rate_hz),
+        "hardware_rate_hz": float(contract.hardware_rate_hz),
+        "bandwidth_hz": float(contract.sample_rate_hz),
         "async_event_counts": {"burst_ack": 1},
         "packet_builder": {
             "mode": "he_ndp_like",
-            "profile": "alb_he_ndp_like_siso_40mhz_v1",
+            "profile": contract.profile,
             "num_he_ltf": 8,
-            "he_ltf_csi_shape": [8, 242],
-            "packet_samples": 5440,
-            "sample_rate_hz": 40_000_000.0,
+            "he_ltf_csi_shape": contract.feature_shape,
+            "packet_samples": contract.packet_samples,
+            "sample_rate_hz": float(contract.sample_rate_hz),
+            "bandwidth_hz": contract.sample_rate_hz,
             "strict_ieee_ndp": False,
             "experiment_id": experiment_id,
         },
     }
     (tx / "state.json").write_text(json.dumps(state), encoding="utf-8")
-    (tx / "process.log").write_text("amplitude peak target: 0.800\n")
-
+    (tx / "process.log").write_text(
+        "amplitude peak target: 0.800\n"
+    )
 
 def validate_rx(root: Path, **overrides):
     values = {
@@ -498,3 +527,88 @@ def test_bf_hardware_preflight_rejects_insufficient_memory(monkeypatch):
     monkeypatch.setattr("sync_framework.orchestration.run_ssh", fake_run)
     with pytest.raises(ProcessFailure, match="insufficient available memory"):
         _wifi_hardware_preflight(plan)
+
+
+def test_bf_20mhz_rx_and_tx_happy_path(tmp_path):
+    write_rx(tmp_path, bandwidth_mhz=20)
+    write_tx(tmp_path, bandwidth_mhz=20)
+
+    summary = validate_rx(tmp_path, bandwidth_mhz=20)
+
+    assert summary["frames_received"] == 1
+    assert summary["feature_shape"] == [8, 122]
+    assert summary["csi_elements_per_frame"] == 976
+    assert summary["training_family"] == "he_ltf_2x_20mhz"
+    assert summary["waveform_profile"] == "alb_he_ndp_like_siso_20mhz_v1"
+    assert summary["bandwidth_mhz"] == 20
+
+    tx_summary = validate_bf_like_tx_outputs(
+        tmp_path,
+        num_packets=1,
+        period_ms=100,
+        tx_gain_db=65,
+        tx_amplitude=0.8,
+        experiment_id=7,
+        bandwidth_mhz=20,
+    )
+    assert tx_summary["bandwidth_mhz"] == 20
+    assert tx_summary["waveform_profile"] == (
+        "alb_he_ndp_like_siso_20mhz_v1"
+    )
+
+
+@pytest.mark.parametrize(
+    ("artifact_bandwidth", "validation_bandwidth"),
+    [
+        (20, 40),
+        (40, 20),
+    ],
+)
+def test_bf_rx_rejects_cross_bandwidth_contract(
+    tmp_path,
+    artifact_bandwidth,
+    validation_bandwidth,
+):
+    write_rx(tmp_path, bandwidth_mhz=artifact_bandwidth)
+
+    with pytest.raises(PublicationFailure):
+        validate_rx(
+            tmp_path,
+            bandwidth_mhz=validation_bandwidth,
+        )
+
+
+@pytest.mark.parametrize(
+    ("artifact_bandwidth", "validation_bandwidth"),
+    [
+        (20, 40),
+        (40, 20),
+    ],
+)
+def test_bf_tx_rejects_cross_bandwidth_contract(
+    tmp_path,
+    artifact_bandwidth,
+    validation_bandwidth,
+):
+    write_tx(tmp_path, bandwidth_mhz=artifact_bandwidth)
+
+    with pytest.raises(PublicationFailure):
+        validate_bf_like_tx_outputs(
+            tmp_path,
+            num_packets=1,
+            period_ms=100,
+            tx_gain_db=65,
+            tx_amplitude=0.8,
+            experiment_id=7,
+            bandwidth_mhz=validation_bandwidth,
+        )
+
+
+def test_bf_schema_rejects_mixed_20_40_contract():
+    schema = load_schema("wifi-bf-like-feature-row")
+    validator = jsonschema.Draft202012Validator(schema)
+
+    mixed = feature_row(bandwidth_mhz=20)
+    mixed["feature_shape"] = [8, 242]
+
+    assert list(validator.iter_errors(mixed))

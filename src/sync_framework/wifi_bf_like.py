@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -15,18 +16,73 @@ from .validation import load_schema
 
 
 NUM_HE_LTF = 8
-NUM_ACTIVE_SUBCARRIERS = 242
-CSI_ELEMENTS_PER_FRAME = NUM_HE_LTF * NUM_ACTIVE_SUBCARRIERS
 COMPLEX64_BYTES = 8
-HARDWARE_RATE_HZ = 40_960_000
-PACKET_SAMPLES = 5_440
 DEFAULT_STREAM_BATCH_PACKETS = 20
 DEFAULT_STREAM_PREFETCH_BATCHES = 3
 MEMORY_MARGIN_BYTES = 2 * 1024**3
 
 EXPECTED_SCHEMA = "alb_he_ndp_like_sounding_v1"
-EXPECTED_PROFILE = "alb_he_ndp_like_siso_40mhz_v1"
 FEATURE_ROW_SCHEMA_REF = "urn:sync:schema:v1:wifi-bf-like-feature-row"
+
+
+@dataclass(frozen=True)
+class HePhyContract:
+    bandwidth_mhz: int
+    sample_rate_hz: int
+    hardware_rate_hz: int
+    active_subcarriers: int
+    packet_samples: int
+    profile: str
+    training_family: str
+
+    @property
+    def csi_elements_per_frame(self) -> int:
+        return NUM_HE_LTF * self.active_subcarriers
+
+    @property
+    def feature_shape(self) -> list[int]:
+        return [NUM_HE_LTF, self.active_subcarriers]
+
+
+PHY_CONTRACTS: dict[int, HePhyContract] = {
+    20: HePhyContract(
+        bandwidth_mhz=20,
+        sample_rate_hz=20_000_000,
+        hardware_rate_hz=20_480_000,
+        active_subcarriers=122,
+        packet_samples=3_360,
+        profile="alb_he_ndp_like_siso_20mhz_v1",
+        training_family="he_ltf_2x_20mhz",
+    ),
+    40: HePhyContract(
+        bandwidth_mhz=40,
+        sample_rate_hz=40_000_000,
+        hardware_rate_hz=40_960_000,
+        active_subcarriers=242,
+        packet_samples=5_440,
+        profile="alb_he_ndp_like_siso_40mhz_v1",
+        training_family="he_ltf_2x_40mhz",
+    ),
+}
+
+
+def phy_contract(bandwidth_mhz: int) -> HePhyContract:
+    try:
+        return PHY_CONTRACTS[bandwidth_mhz]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unsupported HE NDP-like bandwidth: {bandwidth_mhz} MHz; "
+            "expected 20 or 40"
+        ) from exc
+
+
+# Backwards-compatible names for existing 40 MHz tests/imports.
+_DEFAULT_CONTRACT = PHY_CONTRACTS[40]
+NUM_ACTIVE_SUBCARRIERS = _DEFAULT_CONTRACT.active_subcarriers
+CSI_ELEMENTS_PER_FRAME = _DEFAULT_CONTRACT.csi_elements_per_frame
+HARDWARE_RATE_HZ = _DEFAULT_CONTRACT.hardware_rate_hz
+PACKET_SAMPLES = _DEFAULT_CONTRACT.packet_samples
+EXPECTED_PROFILE = _DEFAULT_CONTRACT.profile
 
 
 def global_timeout_s(
@@ -46,8 +102,10 @@ def required_stream_memory_bytes(
     batch_packets: int = DEFAULT_STREAM_BATCH_PACKETS,
     prefetch_batches: int = DEFAULT_STREAM_PREFETCH_BATCHES,
     strategy: str = "timed",
+    bandwidth_mhz: int = 40,
 ) -> int:
     """Upper bound for TX buffers plus OS headroom."""
+    contract = phy_contract(bandwidth_mhz)
     if num_packets <= 0 or period_ms <= 0 or batch_packets <= 0:
         raise ValueError("BF stream sizing inputs must be positive")
     if prefetch_batches < 0:
@@ -56,10 +114,14 @@ def required_stream_memory_bytes(
         raise ValueError("Unsupported BF TX strategy")
     if strategy == "timed":
         hardware_packet_samples = math.ceil(
-            PACKET_SAMPLES * HARDWARE_RATE_HZ / 40_000_000
+            contract.packet_samples
+            * contract.hardware_rate_hz
+            / contract.sample_rate_hz
         )
         return MEMORY_MARGIN_BYTES + hardware_packet_samples * COMPLEX64_BYTES
-    samples_per_period = round(period_ms * HARDWARE_RATE_HZ / 1000.0)
+    samples_per_period = round(
+        period_ms * contract.hardware_rate_hz / 1000.0
+    )
     resident_packets = min(
         num_packets,
         batch_packets * (prefetch_batches + 1),
@@ -122,6 +184,7 @@ def _validate_feature_rows(
     period_ms: float,
     tx_gain_db: float,
     experiment_id: int,
+    contract: HePhyContract,
 ) -> list[int]:
     validator = jsonschema.Draft202012Validator(
         load_schema("wifi-bf-like-feature-row")
@@ -158,14 +221,31 @@ def _validate_feature_rows(
             raise PublicationFailure(f"Non-finite BF-like metadata at row {number}")
         expected_numeric = {
             "num_he_ltf": float(NUM_HE_LTF),
-            "he_ltf_tones": float(NUM_ACTIVE_SUBCARRIERS),
+            "he_ltf_tones": float(contract.active_subcarriers),
             "alb_control_bytes": 27.0,
             "alb_codeword_repetitions": 2.0,
-            "packet_duration_samples": float(PACKET_SAMPLES),
+            "packet_duration_samples": float(contract.packet_samples),
             "fcs_valid": 1.0,
         }
         if any(numeric[name] != value for name, value in expected_numeric.items()):
             raise PublicationFailure(f"Invalid BF-like metadata at row {number}")
+        if not math.isclose(
+            float(row["sample_rate_hz"]),
+            float(contract.sample_rate_hz),
+            rel_tol=0.0,
+            abs_tol=1.0,
+        ):
+            raise PublicationFailure(
+                f"BF-like sample rate mismatch at row {number}"
+            )
+        if row.get("profile_name") != contract.profile:
+            raise PublicationFailure(
+                f"BF-like profile mismatch at row {number}"
+            )
+        if row.get("feature_shape") != contract.feature_shape:
+            raise PublicationFailure(
+                f"BF-like feature shape mismatch at row {number}"
+            )
         if row["experiment_id"] != experiment_id:
             raise PublicationFailure(f"BF-like experiment_id mismatch at row {number}")
         if row["rx_tick_rate_hz"] != round(float(row["sample_rate_hz"])):
@@ -190,6 +270,8 @@ def _validate_feature_rows(
 def _validate_frame_timings(
     rows: list[dict[str, Any]],
     feature_rows: list[dict[str, Any]],
+    *,
+    contract: HePhyContract,
 ) -> None:
     if len(rows) != len(feature_rows):
         raise PublicationFailure(
@@ -208,7 +290,7 @@ def _validate_frame_timings(
         expected = {
             "schema": "waveform_frame_timing_v1",
             "waveform_type": "he_ndp_like",
-            "profile_name": EXPECTED_PROFILE,
+            "profile_name": contract.profile,
             "packet_counter": feature["packet_counter"],
             "sample_offset": feature["sample_offset"],
             "has_rx_device_time": True,
@@ -306,7 +388,9 @@ def validate_bf_like_rx_outputs(
     period_ms: float,
     tx_gain_db: float,
     experiment_id: int,
+    bandwidth_mhz: int = 40,
 ) -> dict[str, Any]:
+    contract = phy_contract(bandwidth_mhz)
     rx_dir = run_dir / "rx_wifi"
     rows = _read_jsonl(rx_dir / "features.jsonl", "WiFi BF-like feature JSONL")
     frame_timings = _read_jsonl(
@@ -323,8 +407,13 @@ def validate_bf_like_rx_outputs(
         period_ms=period_ms,
         tx_gain_db=tx_gain_db,
         experiment_id=experiment_id,
+        contract=contract,
     )
-    _validate_frame_timings(frame_timings, rows)
+    _validate_frame_timings(
+        frame_timings,
+        rows,
+        contract=contract,
+    )
     block_summary = _validate_block_timings(
         block_timings,
         first_feature_sample=rows[0]["sample_offset"],
@@ -335,7 +424,11 @@ def validate_bf_like_rx_outputs(
             f"BF-like reception below required ratio: {len(rows)} < {required}"
         )
     csi_path = rx_dir / "csi.cf32"
-    expected_size = len(rows) * CSI_ELEMENTS_PER_FRAME * COMPLEX64_BYTES
+    expected_size = (
+        len(rows)
+        * contract.csi_elements_per_frame
+        * COMPLEX64_BYTES
+    )
     if not csi_path.is_file() or csi_path.stat().st_size != expected_size:
         raise PublicationFailure("BF-like CF32 size does not match JSONL rows")
     try:
@@ -369,9 +462,11 @@ def validate_bf_like_rx_outputs(
         "frames_required": required,
         "frames_lost": num_packets - len(rows),
         "receive_ratio": len(rows) / num_packets,
-        "csi_elements_per_frame": CSI_ELEMENTS_PER_FRAME,
-        "feature_shape": [NUM_HE_LTF, NUM_ACTIVE_SUBCARRIERS],
-        "training_family": "he_ltf_2x_40mhz",
+        "csi_elements_per_frame": contract.csi_elements_per_frame,
+        "feature_shape": contract.feature_shape,
+        "training_family": contract.training_family,
+        "waveform_profile": contract.profile,
+        "bandwidth_mhz": contract.bandwidth_mhz,
         **block_summary,
     }
 
@@ -384,7 +479,9 @@ def validate_bf_like_tx_outputs(
     tx_gain_db: float,
     tx_amplitude: float,
     experiment_id: int,
+    bandwidth_mhz: int = 40,
 ) -> dict[str, Any]:
+    contract = phy_contract(bandwidth_mhz)
     path = run_dir / "tx_wifi" / "state.json"
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
@@ -415,18 +512,19 @@ def validate_bf_like_tx_outputs(
         or not math.isclose(float(state["period_ms"]), period_ms, abs_tol=1e-6)
         or not _finite_number(state.get("gain_db"))
         or not math.isclose(float(state["gain_db"]), tx_gain_db, abs_tol=1e-6)
-        or state.get("sample_rate_hz") != 40_000_000.0
-        or state.get("hardware_rate_hz") != float(HARDWARE_RATE_HZ)
-        or state.get("bandwidth_hz") != 40_000_000.0
+        or state.get("sample_rate_hz") != float(contract.sample_rate_hz)
+        or state.get("hardware_rate_hz") != float(contract.hardware_rate_hz)
+        or state.get("bandwidth_hz") != float(contract.sample_rate_hz)
     ):
         raise PublicationFailure("BF-like TX period or gain mismatch")
     builder_expected = {
         "mode": "he_ndp_like",
-        "profile": EXPECTED_PROFILE,
+        "profile": contract.profile,
         "num_he_ltf": NUM_HE_LTF,
-        "he_ltf_csi_shape": [NUM_HE_LTF, NUM_ACTIVE_SUBCARRIERS],
-        "packet_samples": PACKET_SAMPLES,
-        "sample_rate_hz": 40_000_000.0,
+        "he_ltf_csi_shape": contract.feature_shape,
+        "packet_samples": contract.packet_samples,
+        "sample_rate_hz": float(contract.sample_rate_hz),
+        "bandwidth_hz": contract.sample_rate_hz,
         "strict_ieee_ndp": False,
         "experiment_id": experiment_id,
     }
@@ -466,4 +564,6 @@ def validate_bf_like_tx_outputs(
         "zero_sends": 0,
         "fatal_async_events": {},
         "tx_strategy": "timed",
+        "bandwidth_mhz": contract.bandwidth_mhz,
+        "waveform_profile": contract.profile,
     }

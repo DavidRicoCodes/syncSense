@@ -168,6 +168,7 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
             period_ms=float(plan.parameters["bf_period_ms"]),
             tx_gain_db=float(plan.parameters["bf_tx_gain_db"]),
             experiment_id=experiment_id_for_run(plan.run_id),
+            bandwidth_mhz=int(plan.parameters["bf_bandwidth_mhz"]),
         )
 
     if (
@@ -181,6 +182,7 @@ def build_producer_manifest(plan: ExecutionPlan, state: dict[str, Any], producer
             tx_gain_db=float(plan.parameters["bf_tx_gain_db"]),
             tx_amplitude=float(plan.parameters["bf_tx_amplitude"]),
             experiment_id=experiment_id_for_run(plan.run_id),
+            bandwidth_mhz=int(plan.parameters["bf_bandwidth_mhz"]),
         )
 
     if (

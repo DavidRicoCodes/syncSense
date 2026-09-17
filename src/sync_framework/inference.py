@@ -95,13 +95,28 @@ class DummyBatchModelAdapter:
                 for artifact in producer["artifacts"]
                 if artifact["artifact_type"] == "wifi_he_ltf_feature_rows"
             )
+            bandwidth_mhz = int(
+                manifest["parameters"].get("bf_bandwidth_mhz", 40)
+            )
+            if bandwidth_mhz == 20:
+                feature_shape = [8, 122]
+            elif bandwidth_mhz == 40:
+                feature_shape = [8, 242]
+            else:
+                raise ValueError(
+                    f"Unsupported BF-like bandwidth: {bandwidth_mhz} MHz"
+                )
+
             summary["wifi_bf_like"] = {
                 "packets_requested": requested,
                 "frames_received": received,
                 "frames_lost": requested - received,
                 "receive_ratio": received / requested,
-                "feature_shape": [8, 242],
-                "waveform_profile": "alb_he_ndp_like_siso_40mhz_v1",
+                "feature_shape": feature_shape,
+                "waveform_profile": (
+                    f"alb_he_ndp_like_siso_{bandwidth_mhz}mhz_v1"
+                ),
+                "bandwidth_mhz": bandwidth_mhz,
                 "input_data": "real_hardware_integration_smoke",
                 "classification_performed": False,
             }

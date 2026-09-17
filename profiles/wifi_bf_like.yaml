@@ -2,9 +2,10 @@ schema_version: 1.0.0
 profile_id: wifi_bf_like
 profile_version: 2.0.0
 experiment_type: wifi_bf_like
-description: Definitive HE NDP-like 40 MHz BF smoke with eight HE-LTF channel estimates per packet.
+description: Selectable HE NDP-like 20/40 MHz BF smoke with eight HE-LTF channel estimates per packet.
 
 parameters:
+  bf_bandwidth_mhz: {type: integer, required: false, default: 40, minimum: 20, maximum: 40}
   label: {type: string, required: true}
   num_packets: {type: integer, required: true, minimum: 1, maximum: 10000}
   bf_period_ms: {type: number, required: false, default: 100, minimum: 10, maximum: 1000}

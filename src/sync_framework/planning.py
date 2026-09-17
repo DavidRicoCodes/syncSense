@@ -19,7 +19,21 @@ ALLOWED_PLACEHOLDERS = {
     "wifi_stream_batch_packets", "tx_start_delay_s",
     "num_packets", "bf_period_ms", "bf_tx_gain_db",
     "bf_tx_amplitude", "bf_detector_threshold",
+    "bf_bandwidth_mhz", "bf_hardware_rate_hz",
 }
+
+
+def _bf_hardware_rate_hz(bandwidth_mhz: int) -> int:
+    rates = {
+        20: 20_480_000,
+        40: 40_960_000,
+    }
+    try:
+        return rates[int(bandwidth_mhz)]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValidationFailure(
+            "bf_bandwidth_mhz must be exactly 20 or 40"
+        ) from exc
 
 
 def experiment_id_for_run(run_id: str | None) -> int:
@@ -77,6 +91,10 @@ def build_plan(inventory, profile, parameters: dict[str, Any], *, run_id: str | 
             "effective_config": str(execution_producer_dir / "runtime" / "effective-config.json"),
             "experiment_id": experiment_id_for_run(run_id),
         }
+        if "bf_bandwidth_mhz" in parameters:
+            context["bf_hardware_rate_hz"] = _bf_hardware_rate_hz(
+                parameters["bf_bandwidth_mhz"]
+            )
         argv = tuple(_format_value(arg, context) for arg in command.argv)
         cwd = Path(_format_value(str(command.cwd), context)).expanduser()
         env = {key: _format_value(value, context) for key, value in command.env.items()}
