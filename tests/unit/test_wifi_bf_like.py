@@ -10,7 +10,7 @@ import pytest
 from sync_framework.domain import PublicationFailure
 from sync_framework.config import load_inventory, load_profile, resolve_parameters
 from sync_framework.domain import ProcessFailure
-from sync_framework.orchestration import _wifi_hardware_preflight
+from sync_framework.orchestration import _prepare_wifi_config, _wifi_hardware_preflight
 from sync_framework.planning import build_plan
 from sync_framework.validation import load_schema
 from sync_framework.wifi_bf_like import (
@@ -497,6 +497,39 @@ def test_bf_hardware_preflight_checks_help_binary_memory_and_context(monkeypatch
     assert contextual[0]["env"] == plan.processes["tx_wifi"].env
     assert any(argv[:2] == ["cat", "/proc/meminfo"] for argv, _ in calls)
     assert any(argv[0] == "strings" for argv, _ in calls)
+
+
+@pytest.mark.parametrize("bandwidth_mhz", [20, 40])
+def test_bf_effective_config_includes_decoded_control_payload(
+    tmp_path, bandwidth_mhz
+):
+    root = Path(__file__).resolve().parents[2]
+    inventory = load_inventory(root / "config" / "inventory.wifi-bf-like.example.yaml")
+    profile = load_profile(root / "profiles" / "wifi_bf_like.yaml")
+    parameters = resolve_parameters(
+        profile,
+        {
+            "label": "payload-contract",
+            "num_packets": "20",
+            "bf_bandwidth_mhz": str(bandwidth_mhz),
+        },
+    )
+    run_dir = tmp_path / "runs" / "run_test"
+    (run_dir / "rx_wifi" / "runtime").mkdir(parents=True)
+    plan = build_plan(
+        inventory,
+        profile,
+        parameters,
+        run_id="run_test",
+        run_dir=run_dir,
+    )
+
+    _prepare_wifi_config(plan, root)
+
+    effective = json.loads(
+        (run_dir / "rx_wifi" / "runtime" / "effective-config.json").read_text()
+    )
+    assert effective["waveform_config"]["include_alb_data"] is True
 
 
 def test_bf_hardware_preflight_rejects_insufficient_memory(monkeypatch):

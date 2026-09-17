@@ -159,6 +159,11 @@ def _prepare_wifi_config(plan: ExecutionPlan, repo_root: Path) -> None:
     config["waveform_config"]["detector"]["metric_threshold"] = float(
         plan.parameters[threshold_parameter]
     )
+    if plan.profile.experiment_type == "wifi_bf_like":
+        # The published row contract includes the decoded ALB control bytes.
+        # Online templates keep them disabled for ad-hoc diagnostics, so the
+        # canonical framework run must enable them explicitly.
+        config["waveform_config"]["include_alb_data"] = True
     if plan.profile.experiment_type in {"nosync_passive", "wifi_bf_like"}:
         device_args = plan.processes["rx_wifi"].command.env.get(
             "SYNC_WIFI_RX_DEVICE_ARGS"
