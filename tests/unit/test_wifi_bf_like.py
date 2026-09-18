@@ -246,12 +246,15 @@ def test_bf_resource_math():
     assert required_stream_memory_bytes(1000, 100, strategy="streamed") == (
         MEMORY_MARGIN_BYTES + 80 * 4_096_000 * 8
     )
+    assert required_stream_memory_bytes(300, 100, strategy="continuous") == (
+        MEMORY_MARGIN_BYTES + 300 * 4_096_000 * 8
+    )
     with pytest.raises(ValueError):
         required_stream_memory_bytes(0, 100)
     with pytest.raises(ValueError):
         required_stream_memory_bytes(1, 100, prefetch_batches=-1)
     with pytest.raises(ValueError):
-        required_stream_memory_bytes(1, 100, strategy="continuous")
+        required_stream_memory_bytes(1, 100, strategy="invalid")
 
 
 def test_bf_schema_is_versioned_and_closed():

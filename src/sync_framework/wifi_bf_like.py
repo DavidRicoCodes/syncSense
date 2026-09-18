@@ -110,7 +110,7 @@ def required_stream_memory_bytes(
         raise ValueError("BF stream sizing inputs must be positive")
     if prefetch_batches < 0:
         raise ValueError("BF stream prefetch count cannot be negative")
-    if strategy not in {"timed", "streamed"}:
+    if strategy not in {"continuous", "timed", "streamed"}:
         raise ValueError("Unsupported BF TX strategy")
     if strategy == "timed":
         hardware_packet_samples = math.ceil(
@@ -122,6 +122,11 @@ def required_stream_memory_bytes(
     samples_per_period = round(
         period_ms * contract.hardware_rate_hz / 1000.0
     )
+    if strategy == "continuous":
+        return (
+            num_packets * samples_per_period * COMPLEX64_BYTES
+            + MEMORY_MARGIN_BYTES
+        )
     resident_packets = min(
         num_packets,
         batch_packets * (prefetch_batches + 1),
