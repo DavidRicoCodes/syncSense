@@ -63,6 +63,10 @@ nodes:
           - "0"
           - --tx-strategy
           - timed
+          - --packet-repetitions
+          - "2"
+          - --packet-repeat-gap-ms
+          - "20"
           - --stream-batch-packets
           - "20"
           - --stream-prefetch-batches
