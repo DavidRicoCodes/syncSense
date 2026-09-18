@@ -42,6 +42,8 @@ nodes:
       - command_id: wifi_online_rx
         argv: [stdbuf, -oL, -eL, "{workspace}/modulos_rx_tx/build/cpp/online_waveform_pipeline", --config, "{effective_config}"]
         cwd: "{workspace}/modulos_rx_tx"
+        env:
+          SYNC_WIFI_RX_DEVICE_ARGS: serial=REPLACE_WIFI_RX_SERIAL_IN_LOCAL_INVENTORY,num_recv_frames=256
         safety_class: dsp
       - command_id: ssb_online_rx
         argv:
