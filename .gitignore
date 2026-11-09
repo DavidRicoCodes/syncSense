@@ -61,6 +61,7 @@ core.*
 /captures/
 /artifacts/
 /results/
+/testmultiband/
 *.h5
 *.hdf5
 *.mat

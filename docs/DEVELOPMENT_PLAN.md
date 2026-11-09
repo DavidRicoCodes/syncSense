@@ -2,7 +2,7 @@
 
 ## Propósito y alcance inmediato
 
-Este documento fija el orden de desarrollo y las decisiones confirmadas para el framework experimental del repositorio padre. El núcleo seguro, la infraestructura SSH/NFS y los smokes hardware están implementados y validados. El software de `nosync_passive` con receptores separados, timestamps USRP locales y asociación NTP derivada está implementado; su aceptación hardware escalonada y los mecanismos posteriores de sincronización siguen pendientes.
+Este documento fija el orden de desarrollo y las decisiones confirmadas para el framework experimental del repositorio padre. El núcleo seguro, la infraestructura SSH/NFS, los smokes hardware y `nosync_passive` están implementados y validados. Los mecanismos posteriores de recepción sincronizada, coordinación BF multi-AP e inferencia científica externa siguen pendientes.
 
 ### Estado del primer incremento seguro
 
@@ -16,7 +16,7 @@ Completado y validado exclusivamente con simulación local:
 - Contrato batch del modelo externo, sin adaptador ejecutable ni inferencia.
 - Tests unitarios e integración con procesos locales y SSH falsos.
 
-Se añadió un segundo incremento de infraestructura con SSH y NFS reales para workers sintéticos. Después se integraron `wifi_link_smoke`, `ssb_rx_smoke` y `nosync_passive_hardware_smoke`. El escenario físico definitivo de `nosync_passive` separa ahora RX 5G en PC1 y RX WiFi en PC2, y utiliza PC3PC4 como TX N310. Los timestamps canónicos de cada receptor están implementados, pero no existe un dominio de adquisición común.
+Se añadió un segundo incremento de infraestructura con SSH y NFS reales para workers sintéticos. Después se integraron `wifi_link_smoke`, `ssb_rx_smoke`, `nosync_passive_hardware_smoke` y el escenario físico definitivo de `nosync_passive`: RX 5G en PC1, RX WiFi en PC2 y TX N310 en PC3PC4. Los timestamps canónicos de cada receptor están implementados, pero no existe un dominio de adquisición común. La aceptación incluyó un combinado de 200 y tres runs de 1000, además de un dataset 4×4 por posiciones; los intentos RF degradados se conservan como `FAILED`.
 
 ### Incremento distribuido de infraestructura
 
@@ -138,9 +138,9 @@ La inferencia dummy puede consumir opcionalmente el manifiesto de esa asociació
 Antes de incorporar RX 5G se valida el enlace PC2 → PC3PC4 → NFS → PC5 mediante `wifi_link_smoke`. El usuario elige entre 1 y 600 beacons; PC5 arranca el RX WiFi, espera una tasa observada de al menos 19 Msps, lanza el TX finito y drena el receptor hasta 2 s de silencio o 10 s como máximo. La publicación requiere al menos el 80 % de contadores, cierre JSONL/CF32 y ausencia de errores UHD/TX.
 
 `wifi_bf_like` añade un *integration smoke* activo acotado para el BF
-definitivo HE NDP-like de 40 MHz: PC2 ejecuta RX WiFi y PC3PC4 TX N310. Conserva el orden receiver-first
+definitivo HE NDP-like seleccionable a 20/40 MHz: PC2 ejecuta RX WiFi y PC3PC4 TX N310. Conserva el orden receiver-first
 y transmitter-first, calcula timeout y memoria a partir de `num_packets` y
-`bf_period_ms`, y publica filas CSI `[8,242]` contra un schema versionado. Este
+`bf_period_ms`, y publica filas CSI `[8,122]` o `[8,242]` contra un schema versionado. Este
 perfil valida transporte, DSP, adquisición local y cierre del dataset; no se
 considera uno de los seis experimentos científicos, no crea un índice de
 eventos canónicos y no ejecuta clasificación o ML. Una campaña es una capa
@@ -214,6 +214,93 @@ La implementación podrá modificar el repositorio padre y `rx_sync`. `modulos_r
 
 No se fijará anticipadamente una tolerancia arbitraria. El umbral final se decidirá después de caracterizar los detectores y el hardware durante `sync_reception`.
 
+## Dirección seleccionada para BF multi-AP
+
+La coordinación BF referenciada a 5G se desarrollará inicialmente con dos AP
+sin backhaul. Esta línea concreta la futura coordinación `sync_all`, pero su
+nombre de perfil y su clasificación exacta dentro de los seis experimentos se
+cerrarán antes de implementarla.
+
+### Fase cero: dos X410 con WiFi 2×2 y RX 5G
+
+Antes de introducir dos USRP diferentes dentro de cada AP, el scheduler se
+validará con un X410 por AP:
+
+- Dos cadenas del X410 se usarán como WiFi 2×2 TDD.
+- Al menos otra cadena recibirá 5G.
+- El tracker 5G y la ejecución WiFi compartirán el timekeeper del mismo X410.
+- Los X410 de AP A y AP B permanecerán físicamente independientes; no
+  compartirán 10 MHz/PPS.
+
+Esta fase separa dos riesgos. Primero comprueba que dos AP adquieren el mismo
+epoch OTA, predicen el mismo ciclo, aplican roles complementarios y ejecutan
+timed commands sin late commands ni colisiones. Después, al migrar a B210+X410,
+se introduce y valida únicamente la transformación temporal local entre
+dispositivos.
+
+El sensing 2×2 será deliberadamente inferior al objetivo 4×4 en apertura,
+ganancia y resolución angular. La aceptación de esta fase no exigirá rendimiento
+Doppler o espacial final; exigirá trazabilidad temporal, consistencia de ciclo,
+programación para el siguiente ciclo y medición del error PSS→PPDU.
+
+El prototipo `testmultiband/2x2.py` no es el perfil buscado: separa dos canales
+TX y dos RX para tono estrecho y consume las cuatro cadenas. El nuevo recorrido
+deberá usar dos cadenas WiFi bidireccionales por TDD y reservar otra para 5G,
+además de integrar detector, epoch y scheduler.
+
+### Arquitectura final: B210 5G + X410 WiFi 4×4
+
+Cada AP utilizará:
+
+- Un B210 como receptor 5G de la celda comercial.
+- Un X410 para WiFi 4×4 TX/RX.
+- Una relación temporal local determinista entre ambos dispositivos mediante
+  10 MHz, PPS y epoch común, o una transformación calibrada equivalente.
+
+Los dos AP no compartirán una referencia física en el experimento final. Un
+clock común entre AP solo podrá emplearse como baseline diagnóstico. La
+sincronización entre AP procederá de identificar la misma celda, referencia
+SSB y epoch de trama mediante PBCH/MIB; PSS/SSS se usará después como heartbeat
+con revalidación.
+
+Cada AP armará el ciclo nominal siguiente completo, aproximadamente 100 ms por
+adelantado. Las muestras y comandos TX/RX se encolarán con timestamps X410
+futuros. Un comando tardío se marcará como turno perdido y no se ejecutará de
+forma inmediata. El host, SSH o PTP no fijarán el instante RF.
+
+La referencia inicial de caracterización será `slot_offset=5 ms`, ventana de
+2 ms y diez paquetes HE NDP-like separados 200 µs. Estos valores, las guardas,
+el número de paquetes y el periodo SSB son configurables y se fijarán tras
+medir la celda, el mapeo B210↔X410 y el jitter.
+
+El trabajo existente se reutiliza como dos baselines diferentes:
+
+- `wifi_bf_like` aporta HE NDP-like SISO 20/40 MHz y un contrato de CSI
+  robusto.
+- `testmultiband` aporta evidencia experimental de timed streaming X410,
+  calibración/steering 4TX×1RX y sounding/MRT/ZF 2×2 y 4×4 con tono estrecho.
+
+Antes de un perfil hardware distribuido hay que unir ambos caminos: waveform
+HE multicanal, calibración por sesión, CSI MIMO, mapping de timestamps,
+scheduler por ciclos y telemetría de late commands. La sincronización obtenida
+será temporal; la fase RF inter-AP seguirá siendo desconocida y el sensing
+deberá usar correcciones CFO/CPE, referencias OTA o features robustas.
+
+La cadencia slow-time se diseñará de forma explícita. Visitar un sector cada
+100 ms produce 10 Hz y limita el Doppler no ambiguo ideal a ±5 Hz; diez paquetes
+dentro de 2 ms no sustituyen una secuencia larga. Los criterios completos están
+en `BF_MULTI_AP_SYNC_ARCHITECTURE.md`.
+
+El orden específico de esta línea será:
+
+1. X410 local: RX 5G y WiFi 2×2 en un timekeeper común.
+2. Dos X410 independientes: adquisición del mismo ciclo y agenda
+   complementaria A-TX/B-RX y B-TX/A-RX.
+3. Medición externa del error PSS→PPDU, jitter, missed slots y late commands.
+4. Sustitución del RX 5G de cada X410 por un B210 localmente referenciado.
+5. Calibración y validación del mapeo B210↔X410.
+6. Extensión WiFi de 2×2 a 4×4 y caracterización espacial/Doppler.
+
 ## Verificación y aceptación
 
 ### Software e infraestructura
@@ -227,7 +314,7 @@ No se fijará anticipadamente una tolerancia arbitraria. El umbral final se deci
 
 ### Experimentos
 
-`nosync_passive` deberá producir una sesión reproducible, con artefactos separados, eventos canónicos locales y dos dominios de reloj marcados explícitamente como no comparables. La aceptación hardware progresa por RX 5G aislado, enlace WiFi N310, conjunto de 200 beacons y tres conjuntos de 1000 beacons.
+`nosync_passive` produce una sesión reproducible, con artefactos separados, eventos canónicos locales y dos dominios de reloj marcados explícitamente como no comparables. La aceptación hardware se completó mediante RX 5G aislado, enlace WiFi N310, conjunto de 200 beacons y tres conjuntos de 1000 beacons.
 
 `sync_reception_passive` deberá:
 
@@ -251,3 +338,6 @@ Antes y después de cada fase se comprobará por separado el estado Git del repo
 - `modulos_rx_tx` solo se modifica con aprobación expresa y commits separados; `rx_sync` permanece reservado para la fase `sync_reception`.
 - La implementación, entrenamiento y métricas internas del modelo de presence detection, localization o tracking quedan fuera del framework. PC5 sí ejecutará ese modelo mediante un adaptador trazable.
 - Cualquier cambio de hardware, coherencia de fase RF, tecnología de distribución de reloj o formato solicitado por el equipo de ML requerirá validación del usuario.
+- Para BF multi-AP, la selección por AP es B210 5G + X410 WiFi 4×4. El
+  hardware exacto de referencia local, el cableado y la asignación de hosts
+  siguen abiertos y no deben inferirse.

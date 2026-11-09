@@ -4,6 +4,14 @@ Este repositorio padre organiza el trabajo experimental para estudiar cómo afec
 
 La descripción autoritativa del objetivo científico y de los experimentos es [`ProjectDescription.md`](ProjectDescription.md). Este documento la resume para orientar el repositorio, pero no la sustituye.
 
+Para trasladar el proyecto a otra IA o retomarlo sin historial, la entrada
+autocontenida es [`docs/PORTABLE_AI_CONTEXT.md`](docs/PORTABLE_AI_CONTEXT.md).
+La arquitectura seleccionada de dos AP con B210+X410 se desarrolla en
+[`docs/BF_MULTI_AP_SYNC_ARCHITECTURE.md`](docs/BF_MULTI_AP_SYNC_ARCHITECTURE.md).
+El estado medido del banco de dos X410 coordinados por 5G (resultados de
+sincronización y sensing, uso de los scripts y pendientes) está en
+[`docs/BF_MULTI_AP_TESTBED_STATUS.md`](docs/BF_MULTI_AP_TESTBED_STATUS.md).
+
 ## Estado actual
 
 El repositorio contiene dos proyectos independientes como submódulos:
@@ -11,7 +19,23 @@ El repositorio contiene dos proyectos independientes como submódulos:
 - `modulos_rx_tx`: módulos de transmisión, recepción, captura, procesado e inferencia para 5G SSB y beacons WiFi con USRP.
 - `rx_sync`: prototipos de recepción simultánea multibanda con USRP X410 y pruebas iniciales de waveforms activas.
 
-El framework padre está implementado como paquete Python `sync-framework`, con CLI `syncctl`. Además de la prueba sintética `distributed_dummy` y los smokes hardware previos, `nosync_passive` ya describe el escenario físico separado: PC1 recibe 5G comercial, PC2 recibe WiFi y PC3PC4 transmite beacons con un N310. El software publica timestamps canónicos locales por receptor y mantiene la asociación NTP como derivado reintentable; la aceptación hardware completa de este nuevo recorrido se realiza por etapas.
+El framework padre está implementado como paquete Python `sync-framework`, con CLI `syncctl`. Además de la prueba sintética `distributed_dummy` y los smokes hardware previos, `nosync_passive` describe y ha validado el escenario físico separado: PC1 recibe 5G comercial, PC2 recibe WiFi y PC3PC4 transmite beacons con un N310. El software publica timestamps canónicos locales por receptor y mantiene la asociación NTP como derivado reintentable.
+
+La dirección de investigación BF sincronizada adopta dos AP físicos. Cada AP
+usará un B210 para observar 5G y un X410 para WiFi 4×4 TX/RX. Ambos AP
+adquirirán el ciclo común desde la misma celda 5G y ejecutarán una agenda WiFi
+complementaria mediante comandos UHD temporizados. Esta arquitectura está
+seleccionada, pero el scheduler, el HE NDP-like 4×4 y el sensing Doppler
+distribuido todavía no están integrados.
+
+Antes de introducir el B210 se realizará una validación intermedia deliberada:
+dos X410 independientes, uno por AP, dedicarán dos cadenas a WiFi 2×2 TDD y al
+menos otra cadena a RX 5G. Al compartir 5G y WiFi el timekeeper del X410 local,
+esta prueba elimina temporalmente el problema de mapeo B210↔X410 y permite
+validar primero epoch 5G, heartbeat, predicción del ciclo siguiente, agenda
+complementaria y timed commands. Se acepta una peor resolución de sensing por
+usar dos elementos; la prueba valida sincronización, no el rendimiento espacial
+final. Después se mantendrá el algoritmo y se migrará a B210+X410 4×4.
 
 ## Roles de los equipos
 
@@ -100,7 +124,7 @@ PC5 arranca primero el RX, exige un `STATUS` de al menos 19 Msps y solo entonces
 El parámetro opcional `detector_threshold` conserva `0.85` como valor predeterminado y permite campañas controladas con otros umbrales. Cuando se ejecuta este smoke, el RX añade `frame-timings.jsonl` y `block-timings.jsonl` con latencias operacionales del host. Estas medidas incluyen incertidumbre de entrega USB/host y no son timestamps RF. El runner parametrizable y el formato de resultados se documentan en [`docs/WIFI_THRESHOLD_CAMPAIGNS.md`](docs/WIFI_THRESHOLD_CAMPAIGNS.md).
 
 El perfil `wifi_bf_like` integra como BF definitivo el sounding HE NDP-like
-de 40 MHz con ocho HE-LTF y CSI `[8,242]` por paquete. PC2 recibe primero y
+seleccionable a 20/40 MHz con ocho HE-LTF y CSI `[8,122]`/`[8,242]` por paquete. PC2 recibe primero y
 PC3PC4 transmite después con el N310; la ejecución sigue siendo un
 *integration smoke* de una banda, no el experimento multibanda
 `nosync_active` ni una inferencia científica:
@@ -118,7 +142,7 @@ PYTHONPATH=src /usr/bin/python3 -m sync_framework.cli \
 
 El inventario versionable sin identidades del laboratorio está en
 `config/inventory.wifi-bf-like.example.yaml`. La publicación exige el contrato
-HE NDP-like v1, 1936 complejos finitos por frame, cierre JSONL/CF32, tiempos
+HE NDP-like v1, el número de complejos correspondiente al ancho seleccionado, cierre JSONL/CF32, tiempos
 UHD locales coherentes, cero errores durante la captura útil y el ratio mínimo
 configurado. Se admiten únicamente discontinuidades de arranque anteriores a
 la primera trama útil y quedan contabilizadas en el resumen. La
@@ -210,10 +234,14 @@ se reorganizan automáticamente.
 
 - SSH real admite simulaciones con `--allow-remote-simulation`. El smoke 5G exige solo `--allow-hardware-receive`; el smoke WiFi exige además `--allow-rf-transmit`. NFS solo cambia mediante `--apply`.
 - El perfil distribuido produce datos y eventos marcados como sintéticos. No valida captura científica ni sincronización de adquisición.
-- El software del nuevo `nosync_passive` raw está implementado; su aceptación hardware escalonada permanece separada de la validación software.
+- El software de `nosync_passive` raw está implementado y su aceptación hardware se completó; las realizaciones RF degradadas se conservan como fallos, sin relajar guardrails.
 - NTP no sincroniza la adquisición. La asociación aproximada es un derivado reintentable y no forma parte del manifiesto raw inmutable.
-- `sync_reception`, los restantes perfiles experimentales y la inferencia externa siguen pendientes.
+- `sync_reception`, los restantes perfiles experimentales, la coordinación BF
+  B210+X410 y la inferencia externa siguen pendientes.
 - `modulos_rx_tx` conserva su historial y contiene el receptor JSONL 5G incorporado en el commit fijado; `rx_sync` permanece intacto.
+- `testmultiband` es un banco X410 independiente y no versionado situado en
+  PC3PC4. Sus pruebas de tono demuestran calibración/steering y sounding MIMO,
+  pero no constituyen todavía el pipeline 4×4 del framework.
 - Cualquier ampliación no contenida en la descripción se propone primero y requiere validación expresa.
 
 ## Continuación del desarrollo
