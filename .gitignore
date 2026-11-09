@@ -1,0 +1,16 @@
+# Data and outputs stay out of git (see docs/DATA.md)
+*.npz
+*.npy
+*.mat
+*.cf32
+*.h5
+*.jsonl
+*.log
+*.png
+*.pdf
+__pycache__/
+*.py[cod]
+# Local configuration
+*.local.yaml
+.codex/
+AGENTS.md
